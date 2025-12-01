@@ -3,11 +3,9 @@
     <div class="diff-header">
       <div class="diff-side-header old-side">
         <span class="diff-label">Original</span>
-        <span v-if="filename" class="diff-filename">{{ filename }}</span>
       </div>
       <div class="diff-side-header new-side">
         <span class="diff-label">Modified</span>
-        <span v-if="filename" class="diff-filename">{{ filename }}</span>
       </div>
     </div>
     <div class="diff-content">
@@ -119,16 +117,13 @@ const getLineContent = (index, side) => {
 .side-by-side-diff {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
   overflow: hidden;
-  background: var(--background);
 }
 
 .diff-header {
   display: flex;
-  background: var(--muted);
-  border-bottom: 1px solid var(--border);
+  background: transparent;
+  margin-top: 0;
 }
 
 .diff-side-header {
@@ -137,17 +132,18 @@ const getLineContent = (index, side) => {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  font-size: var(--text-sm);
+  font-size: 12px;
   font-weight: 500;
 }
 
 .diff-side-header.old-side {
-  border-right: 1px solid var(--border);
-  color: var(--destructive);
+  background: color-mix(in srgb, var(--destructive) 15%, transparent 85%);
+  color: var(--foreground);
 }
 
 .diff-side-header.new-side {
-  color: var(--success);
+  background: color-mix(in srgb, var(--success) 15%, transparent 85%);
+  color: var(--foreground);
 }
 
 .diff-label {
@@ -157,13 +153,20 @@ const getLineContent = (index, side) => {
 .diff-filename {
   color: var(--muted-foreground);
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: 11px;
 }
 
 .diff-content {
   display: flex;
-  height: 400px;
+  max-height: 250px;
   overflow: auto;
+  margin-top: 0;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.diff-content::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
 }
 
 .diff-side {
@@ -171,10 +174,16 @@ const getLineContent = (index, side) => {
   display: flex;
   flex-direction: column;
   overflow: auto;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.diff-side::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
 }
 
 .diff-side.old-side {
-  border-right: 1px solid var(--border);
+  border-right: none;
 }
 
 .diff-lines {
@@ -185,29 +194,31 @@ const getLineContent = (index, side) => {
 
 .diff-line {
   display: flex;
-  min-height: 20px;
+  min-height: 18px;
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .line-number {
   display: inline-block;
-  width: 50px;
+  width: 40px;
   padding: 0 var(--space-2);
   text-align: right;
   color: var(--muted-foreground);
   background: var(--muted);
-  border-right: 1px solid var(--border);
+  border-right: none;
   user-select: none;
   flex-shrink: 0;
+  font-size: 11px;
 }
 
 .line-content {
   flex: 1;
-  padding: 0 var(--space-3);
+  padding: 0 var(--space-2);
   white-space: pre;
   word-break: break-all;
+  font-size: 11px;
 }
 
 .diff-line.line-unchanged .line-content {
@@ -233,7 +244,7 @@ const getLineContent = (index, side) => {
 }
 
 .diff-line.line-empty {
-  min-height: 20px;
+  min-height: 18px;
 }
 
 .diff-line.line-empty .line-content {

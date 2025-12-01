@@ -4,8 +4,13 @@ mercury
     <!-- Header -->
     <div class="chat-header">
       <div class="header-left">
-        <Brain class="chat-icon" :size="14" />
-        <span class="chat-title">Agent</span>
+        <div class="app-logo">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="2.5"/>
+            <circle cx="10" cy="10" r="3.5" stroke="currentColor" stroke-width="2.5"/>
+          </svg>
+        </div>
+        <span class="chat-title">Mercury Coder</span>
       </div>
       <button class="clear-btn" @click="clearChat" title="Clear">
         <Eraser :size="14" />
@@ -75,17 +80,113 @@ mercury
                   <template v-for="(part, partIndex) in assistantMsg.parts" :key="part.id">
                     <!-- Text Part -->
                     <div v-if="part.type === 'text'" class="message-part text-part">
-                      <div class="text-content" v-html="formatMessage(part.text)"></div>
+                      <div 
+                        class="text-content" 
+                        :key="`text-${part.id}-${part.text?.length || 0}`"
+                        v-html="formatMessage(part.text)"
+                      ></div>
                     </div>
                     
                     <!-- Tool Part -->
-                    <div v-else-if="part.type === 'tool'" class="message-part tool-part">
-                      <div class="tool-call">
-                        <div class="tool-header">
-                          <span class="tool-name">{{ part.tool }}</span>
-                          <span class="tool-status" :class="getToolStatusClass(part.state?.status)">
-                            {{ getToolStatusText(part.state?.status) }}
-                          </span>
+                    <div v-else-if="part.type === 'tool' && isToolReady(part)" class="message-part tool-part" :class="{ 'has-content': hasVisibleContent(part) }">
+                      <div class="tool-container">
+                        <div 
+                          class="tool-header" 
+                          :class="{ 
+                            'rounded-bottom': !hasVisibleContent(part),
+                            'clickable': hasTechnicalDetails(part)
+                          }"
+                          @click="hasTechnicalDetails(part) && toggleToolDetails(part.callID || part.id)"
+                          :style="{ cursor: hasTechnicalDetails(part) ? 'pointer' : 'default' }"
+                        >
+                          <div class="tool-title-section">
+                            <span class="tool-name">
+                              <component :is="getToolIcon(part)" class="tool-icon" :size="14" />
+                              {{ getToolDisplayName(part) }}
+                              <span v-if="getToolSubtitle(part)" class="tool-subtitle-inline">{{ getToolSubtitle(part) }}</span>
+                            </span>
+                            <span v-if="getToolCount(part)" class="tool-count">
+                              <FileText v-if="getToolCountIcon(part) === 'file'" :size="12" />
+                              <CheckSquare v-else-if="getToolCountIcon(part) === 'check'" :size="12" />
+                              {{ getToolCount(part) }}
+                            </span>
+                          </div>
+                          <div class="tool-header-right">
+                            <span v-if="part.state?.status === 'error'" class="tool-status" :class="getToolStatusClass(part.state?.status)">
+                              {{ getToolStatusText(part.state?.status) }}
+                            </span>
+                            <div
+                              v-if="hasTechnicalDetails(part)"
+                              class="tool-details-toggle-header"
+                              @click.stop
+                            >
+                              <ChevronDown :size="12" :class="{ 'expanded': expandedToolDetails.has(part.callID || part.id) }" />
+                            </div>
+                          </div>
+                        </div>
+                        <div v-if="hasVisibleContent(part)" class="tool-content">
+                        
+                        <!-- Todo list display (todowrite) -->
+                        <div v-if="part.tool === 'todowrite' && part.state?.input?.todos" class="tool-todos">
+                          <div class="todos-list">
+                            <div
+                              v-for="(todo, index) in part.state.input.todos"
+                              :key="index"
+                              class="todo-item"
+                              :class="{ 'todo-completed': todo.status === 'completed' }"
+                            >
+                              <div v-if="todo.status === 'in_progress' || todo.status === 'running'" class="todo-spinner">
+                                <RefreshCw :size="14" class="spinner-icon" />
+                              </div>
+                              <div v-else class="custom-checkbox" :class="{ 'checked': todo.status === 'completed' }">
+                                <svg v-if="todo.status === 'completed'" class="checkmark" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                  <path
+                                    d="M3 7.17905L5.02703 8.85135L9 3.5"
+                                    stroke="currentColor"
+                                    stroke-width="1.5"
+                                    stroke-linecap="square"
+                                  />
+                                </svg>
+                              </div>
+                              <span class="todo-content" :class="{ 'shimmer-text': todo.status === 'in_progress' || todo.status === 'running' }">{{ todo.content }}</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <!-- Task list display (task) -->
+                        <div v-if="part.tool === 'task' && part.metadata?.summary" class="tool-task-list">
+                          <div class="task-description">{{ part.state?.input?.description || 'Task in progress' }}</div>
+                          <div v-if="Array.isArray(part.metadata.summary)" class="task-todos">
+                            <div
+                              v-for="(taskPart, index) in part.metadata.summary"
+                              :key="index"
+                              class="task-item"
+                            >
+                              <div v-if="taskPart.state?.input?.todos" class="task-todos-list">
+                                <div
+                                  v-for="(todo, todoIndex) in taskPart.state.input.todos"
+                                  :key="todoIndex"
+                                  class="todo-item"
+                                  :class="{ 'todo-completed': todo.status === 'completed' }"
+                                >
+                                  <div v-if="todo.status === 'in_progress' || todo.status === 'running'" class="todo-spinner">
+                                    <RefreshCw :size="14" class="spinner-icon" />
+                                  </div>
+                                  <div v-else class="custom-checkbox" :class="{ 'checked': todo.status === 'completed' }">
+                                    <svg v-if="todo.status === 'completed'" class="checkmark" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <path
+                                        d="M3 7.17905L5.02703 8.85135L9 3.5"
+                                        stroke="currentColor"
+                                        stroke-width="1.5"
+                                        stroke-linecap="square"
+                                      />
+                                    </svg>
+                                  </div>
+                                  <span class="todo-content" :class="{ 'shimmer-text': todo.status === 'in_progress' || todo.status === 'running' }">{{ todo.content }}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                         
                         <!-- Show side-by-side diff for edit tools -->
@@ -106,20 +207,27 @@ mercury
                           />
                         </div>
                         
-                        <!-- Show file path for edit/write tools without diff -->
-                        <div v-else-if="(part.tool === 'edit' || part.tool === 'write') && part.state?.input?.filePath" class="tool-file-path">
-                          <span class="file-path-label">File:</span>
-                          <span class="file-path-value">{{ part.state.input.filePath }}</span>
+                        <!-- Collapsible technical details -->
+                        <div
+                          v-if="hasTechnicalDetails(part) && expandedToolDetails.has(part.callID || part.id)"
+                          class="tool-details-content"
+                        >
+                          <div v-if="part.state?.input && shouldShowInput(part)" class="tool-input">
+                            <pre>{{ JSON.stringify(part.state.input, null, 2) }}</pre>
+                          </div>
+                          <div v-if="part.state?.output && shouldShowOutput(part)" class="tool-output">
+                            <pre>{{ part.state.output }}</pre>
+                          </div>
                         </div>
                         
-                        <div v-if="part.state?.input && !((part.tool === 'edit' || part.tool === 'write') && part.metadata?.filediff)" class="tool-input">
-                          <pre>{{ JSON.stringify(part.state.input, null, 2) }}</pre>
-                        </div>
-                        <div v-if="part.state?.output && part.tool !== 'edit' && part.tool !== 'write'" class="tool-output">
+                        <!-- Non-collapsible output for certain tools -->
+                        <div v-if="part.state?.output && !shouldCollapseOutput(part)" class="tool-output">
                           <pre>{{ part.state.output }}</pre>
                         </div>
+                        
                         <div v-if="part.state?.error" class="tool-error">
                           Error: {{ part.state.error }}
+                        </div>
                         </div>
                       </div>
                     </div>
@@ -133,10 +241,11 @@ mercury
                   </template>
                 </div>
                 
-                <!-- Status indicator for incomplete messages -->
-                <div v-if="!assistantMsg.info.finish" class="status-indicator">
-                  <span class="status-text shimmer-text">{{ getStatusText(turn, assistantMsg) }}</span>
-                </div>
+                    <!-- Status indicator for incomplete messages -->
+                    <div v-if="!assistantMsg.info.finish" class="status-indicator">
+                      <RefreshCw :size="16" class="status-spinner" />
+                      <span class="status-text shimmer-text">{{ getStatusText(turn, assistantMsg) }}</span>
+                    </div>
                 
                 <!-- Error display -->
                 <div v-if="assistantMsg.info.error" class="message-error">
@@ -151,6 +260,7 @@ mercury
           <!-- Loading indicator for turn in progress -->
           <div v-else-if="turnIndex === turns.length - 1 && loading" class="turn-loading">
             <div class="status-indicator">
+              <RefreshCw :size="16" class="status-spinner" />
               <span class="status-text shimmer-text">{{ getDefaultStatusText() }}</span>
             </div>
           </div>
@@ -189,7 +299,7 @@ mercury
           ref="inputRef"
         ></textarea>
         <div v-if="showTranscribingPlaceholder" class="transcribing-overlay">
-          <span class="transcribing-text">Listening</span>
+          <span class="transcribing-text shimmer-text">Listening</span>
         </div>
         <button
           v-if="isRecording"
@@ -253,7 +363,8 @@ mercury
 <script setup>
 import { ref, computed, nextTick, watch, onBeforeUnmount } from 'vue';
 import {
-  Mic, Square, Send, Loader2, Eraser, Brain, RefreshCw
+  Mic, Square, Send, Loader2, Eraser, Brain, RefreshCw, ChevronDown, FileText, CheckSquare,
+  Search, FileEdit, FilePlus, FolderOpen, Globe, Terminal, ListTodo
 } from 'lucide-vue-next';
 import { useChatStore } from '@/stores/chat';
 import { useProjectStore } from '@/stores/project';
@@ -315,6 +426,7 @@ const getDefaultStatusMessage = (stage) => {
 const inputText = ref('');
 const inputRef = ref(null);
 const messagesContainer = ref(null);
+const expandedToolDetails = ref(new Set());
 const isRecording = ref(false);
 const hasManuallyStopped = ref(false);
 const isTranscribingFinal = ref(false);
@@ -686,6 +798,270 @@ const getDiffFilename = (part) => {
     return getFilename(part.state.input.filePath)
   }
   return ''
+}
+
+/**
+ * Get icon component for tool type
+ */
+const getToolIcon = (part) => {
+  const tool = part.tool
+  const iconMap = {
+    'list': FolderOpen,
+    'read': FileText,
+    'edit': FileEdit,
+    'write': FilePlus,
+    'webfetch': Globe,
+    'task': ListTodo,
+    'todowrite': CheckSquare,
+    'bash': Terminal,
+    'grep': Search,
+    'glob': Search
+  }
+  return iconMap[tool] || FileText
+}
+
+/**
+ * Get user-friendly tool display name (past tense)
+ */
+const getToolDisplayName = (part) => {
+  const tool = part.tool
+  const input = part.state?.input || {}
+  
+  const nameMap = {
+    'list': 'Explored',
+    'read': 'Read',
+    'edit': 'Edit',
+    'write': 'Write',
+    'webfetch': 'Searched the web',
+    'task': 'Task',
+    'todowrite': 'To-dos',
+    'bash': 'Shell',
+    'grep': 'Searched',
+    'glob': 'Searched'
+  }
+  
+  let name = nameMap[tool] || tool
+  
+  // For edit tool, append filename
+  if (tool === 'edit' && input.filePath) {
+    name += ' ' + getFilename(input.filePath)
+  }
+  
+  return name
+}
+
+/**
+ * Get tool subtitle (contextual information) - inline with title
+ */
+const getToolSubtitle = (part) => {
+  const tool = part.tool
+  const input = part.state?.input || {}
+  
+  if (tool === 'list') {
+    const path = input.path || '/'
+    if (path === '/' || path === '') {
+      return 'the codebase'
+    }
+    // Extract directory name from path
+    const parts = path.split('/').filter(p => p)
+    return parts.length > 0 ? parts[parts.length - 1] : 'the codebase'
+  }
+  
+  if (tool === 'read' && input.filePath) {
+    return getFilename(input.filePath)
+  }
+  
+  if (tool === 'webfetch' && input.url) {
+    try {
+      const url = new URL(input.url)
+      return url.hostname
+    } catch {
+      return input.url
+    }
+  }
+  
+  if (tool === 'task' && input.description) {
+    return input.description
+  }
+  
+  // Don't show subtitle for edit (filename is in title) or todowrite (count is shown separately)
+  if (tool === 'edit' || tool === 'todowrite') {
+    return null
+  }
+  
+  return null
+}
+
+/**
+ * Get tool count (for right side display)
+ */
+const getToolCount = (part) => {
+  const tool = part.tool
+  const input = part.state?.input || {}
+  
+  if (tool === 'todowrite' && input.todos) {
+    // Count files to edit
+    const editTodos = input.todos.filter(t => 
+      t.content && (
+        t.content.toLowerCase().includes('edit') ||
+        t.content.toLowerCase().includes('file') ||
+        t.content.toLowerCase().includes('update')
+      )
+    )
+    if (editTodos.length > 0) {
+      return editTodos.length
+    }
+    // Otherwise show completion count
+    const completed = input.todos.filter(t => t.status === 'completed').length
+    const total = input.todos.length
+    return `${completed}/${total}`
+  }
+  
+  return null
+}
+
+/**
+ * Get icon type for tool count
+ */
+const getToolCountIcon = (part) => {
+  const tool = part.tool
+  if (tool === 'todowrite') {
+    const input = part.state?.input || {}
+    const editTodos = input.todos?.filter(t => 
+      t.content && (
+        t.content.toLowerCase().includes('edit') ||
+        t.content.toLowerCase().includes('file') ||
+        t.content.toLowerCase().includes('update')
+      )
+    )
+    if (editTodos && editTodos.length > 0) {
+      return 'file'
+    }
+    return 'check'
+  }
+  return null
+}
+
+
+/**
+ * Check if tool has technical details to show
+ */
+const hasTechnicalDetails = (part) => {
+  // Don't show technical details for tools that have special displays
+  if (part.tool === 'todowrite' || part.tool === 'task') {
+    return false
+  }
+  
+  // Show if there's input or output that should be collapsible
+  return (part.state?.input && shouldShowInput(part)) || 
+         (part.state?.output && shouldShowOutput(part) && shouldCollapseOutput(part))
+}
+
+/**
+ * Check if input should be shown
+ */
+const shouldShowInput = (part) => {
+  // Don't show input for edit/write if they have diff
+  if ((part.tool === 'edit' || part.tool === 'write') && hasDiffData(part)) {
+    return false
+  }
+  return true
+}
+
+/**
+ * Check if output should be shown
+ */
+const shouldShowOutput = (part) => {
+  // Don't show output for edit/write (they use diff instead)
+  if (part.tool === 'edit' || part.tool === 'write') {
+    return false
+  }
+  return true
+}
+
+/**
+ * Check if output should be collapsible
+ */
+const shouldCollapseOutput = (part) => {
+  // Most tools should have collapsible output
+  // Except for tools that have special displays
+  return true
+}
+
+/**
+ * Toggle tool details accordion
+ */
+const toggleToolDetails = (partId) => {
+  if (expandedToolDetails.value.has(partId)) {
+    expandedToolDetails.value.delete(partId)
+  } else {
+    expandedToolDetails.value.add(partId)
+  }
+}
+
+/**
+ * Check if tool is ready to be displayed (has content or error)
+ */
+const isToolReady = (part) => {
+  // Always show if there's an error
+  if (part.state?.status === 'error' || part.state?.error) {
+    return true
+  }
+  
+  // For edit/write tools, wait for diff data
+  if (part.tool === 'edit' || part.tool === 'write') {
+    return hasDiffData(part)
+  }
+  
+  // For todowrite, wait for todos
+  if (part.tool === 'todowrite') {
+    return !!part.state?.input?.todos
+  }
+  
+  // For task, wait for summary
+  if (part.tool === 'task') {
+    return !!part.metadata?.summary
+  }
+  
+  // For other tools, show if they have output or are completed
+  if (part.state?.output || part.state?.status === 'completed') {
+    return true
+  }
+  
+  // Don't show if still running without content
+  return false
+}
+
+/**
+ * Check if tool part has visible content (excluding technical details)
+ */
+const hasVisibleContent = (part) => {
+  // Check for todos
+  if (part.tool === 'todowrite' && part.state?.input?.todos) {
+    return true
+  }
+  
+  // Check for task list
+  if (part.tool === 'task' && part.metadata?.summary) {
+    return true
+  }
+  
+  // Check for diff
+  if ((part.tool === 'edit' || part.tool === 'write') && hasDiffData(part)) {
+    return true
+  }
+  
+  // Check for non-collapsible output
+  if (part.state?.output && !shouldCollapseOutput(part)) {
+    return true
+  }
+  
+  // Check for expanded technical details
+  if (hasTechnicalDetails(part) && expandedToolDetails.value.has(part.callID || part.id)) {
+    return true
+  }
+  
+  return false
 }
 
 const formatMessage = (content) => {
@@ -1064,10 +1440,10 @@ onBeforeUnmount(() => {
 .header-left {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-2);
 }
 
-.chat-icon {
+.app-logo {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1076,7 +1452,7 @@ onBeforeUnmount(() => {
 }
 
 .chat-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--foreground);
   margin: 0;
@@ -1089,7 +1465,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
   padding: var(--space-3) var(--space-6);
   border-radius: var(--radius-md);
-  font-size: 12px;
+  font-size: 13px;
   transition: all 0.2s;
   display: flex;
   align-items: center;
@@ -1105,7 +1481,7 @@ onBeforeUnmount(() => {
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-6);
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-6);
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
@@ -1146,14 +1522,14 @@ onBeforeUnmount(() => {
 }
 
 .empty-state-title {
-  font-size: 20px;
+  font-size: 21px;
   font-weight: 600;
   color: var(--foreground);
   margin: 0;
 }
 
 .empty-state-text {
-  font-size: 14px;
+  font-size: 15px;
   color: var(--muted-foreground);
   line-height: 1.6;
   margin: 0;
@@ -1164,8 +1540,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-4) var(--space-4) var(--space-4) 0;
-  border-bottom: 1px solid var(--border);
+  padding: var(--space-4) var(--space-4) 0 0;
 }
 
 .turn-user-message {
@@ -1188,13 +1563,14 @@ onBeforeUnmount(() => {
   line-height: 1.6;
   white-space: pre-wrap;
   word-wrap: break-word;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .turn-assistant-response {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  margin-left: var(--space-4);
   padding: 0;
 }
 
@@ -1217,6 +1593,12 @@ onBeforeUnmount(() => {
   gap: var(--space-2);
 }
 
+.text-part {
+  margin-top: var(--space-2);
+  margin-bottom: var(--space-2);
+  margin-left: 2px;
+}
+
 .text-part .text-content {
   color: var(--foreground);
   line-height: 1.6;
@@ -1224,19 +1606,32 @@ onBeforeUnmount(() => {
   word-wrap: break-word;
   padding: 0;
   margin: 0;
+  font-size: 13px;
+  will-change: contents;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 .tool-part {
-  background: var(--muted);
-  padding: var(--space-3);
   border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-}
-
-.tool-call {
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+}
+
+.tool-part.has-content .tool-header {
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.tool-part:not(.has-content) .tool-header {
+  border-radius: var(--radius-md);
+}
+
+.tool-container {
+  display: flex;
+  flex-direction: column;
 }
 
 .tool-header {
@@ -1244,26 +1639,111 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   font-weight: 500;
+  gap: var(--space-3);
+  background: var(--muted);
+  padding: var(--space-2) var(--space-3);
+  font-size: 13px;
+  transition: background 0.2s ease;
+}
+
+.tool-header.clickable:hover {
+  background: var(--accent);
+}
+
+.tool-header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tool-details-toggle-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.tool-details-toggle-header svg {
+  transition: transform 0.2s ease;
+}
+
+.tool-details-toggle-header .expanded {
+  transform: rotate(180deg);
+}
+
+.toggle-text {
+  font-weight: 500;
+  font-size: 13px;
+}
+
+.tool-content {
+  background: var(--background);
+  padding: var(--space-2) var(--space-3);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  max-height: 250px;
+  overflow-y: auto;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.tool-content::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+.tool-title-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  gap: var(--space-2);
 }
 
 .tool-name {
   color: var(--foreground);
+  font-weight: 500;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.tool-icon {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  opacity: 0.8;
+}
+
+.tool-subtitle-inline {
+  color: var(--muted-foreground);
+  font-weight: 400;
+  font-size: 13px;
+}
+
+.tool-count {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .tool-status {
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
+  font-size: 12px;
 }
 
 .tool-status.status-running {
-  background: var(--accent);
-  color: var(--accent-foreground);
+  background: var(--muted);
+  color: var(--muted-foreground);
 }
 
 .tool-status.status-completed {
-  background: var(--success);
-  color: var(--success-foreground);
+  display: none;
 }
 
 .tool-status.status-error {
@@ -1273,22 +1753,177 @@ onBeforeUnmount(() => {
 
 .tool-input,
 .tool-output {
-  background: var(--background);
-  padding: var(--space-2);
-  border-radius: var(--radius-sm);
+  background: transparent;
+  padding: var(--space-2) 0;
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
+  font-size: 12px;
   overflow-x: auto;
 }
 
 .tool-error {
   color: var(--destructive);
-  font-size: var(--text-sm);
+  font-size: 12px;
+}
+
+/* Todo list styles */
+.tool-todos {
+  margin-top: var(--space-2);
+}
+
+.todos-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.todo-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+  font-size: 13px;
+  min-height: 20px;
+}
+
+.todo-item:hover {
+  background: var(--muted);
+}
+
+.todo-item.todo-completed {
+  opacity: 1;
+}
+
+.custom-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border);
+  background: var(--background);
+  transition: all 0.2s ease;
+  position: relative;
+  margin-top: 2px;
+}
+
+.custom-checkbox.checked {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.custom-checkbox .checkmark {
+  width: 10px;
+  height: 10px;
+  color: var(--primary-foreground);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.custom-checkbox.checked .checkmark {
+  opacity: 1;
+}
+
+.todo-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.todo-spinner .spinner-icon {
+  color: var(--primary);
+  animation: spin 1s linear infinite;
+}
+
+.todo-content {
+  flex: 1;
+  line-height: 1.5;
+  color: var(--foreground);
+  transition: all 0.2s ease;
+  padding-top: 1px; /* Slight alignment adjustment */
+}
+
+.todo-content.shimmer-text {
+  background: linear-gradient(
+    270deg,
+    var(--muted-foreground) 0%,
+    var(--muted-foreground) 35%,
+    color-mix(in srgb, var(--muted-foreground) 20%, white 80%) 42%,
+    white 50%,
+    color-mix(in srgb, var(--muted-foreground) 20%, white 80%) 58%,
+    var(--muted-foreground) 65%,
+    var(--muted-foreground) 100%
+  );
+  background-size: 400% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  opacity: 0.7;
+  animation: shimmer-sweep-reverse 3.5s linear infinite;
+}
+
+.todo-item.todo-completed .todo-content {
+  text-decoration: line-through;
+  color: var(--muted-foreground);
+  opacity: 0.7;
+}
+
+/* Task list styles */
+.tool-task-list {
+  margin-top: var(--space-2);
+}
+
+.task-description {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--foreground);
+  margin-bottom: var(--space-2);
+}
+
+.task-todos {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.task-item {
+  padding: var(--space-1) var(--space-2);
+  background: var(--muted);
+  border-radius: var(--radius-sm);
+}
+
+.task-todos-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Accordion for technical details */
+.tool-details-content {
+  width: 100%;
+  animation: slideDown 0.2s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .tool-diff {
-  margin-top: var(--space-3);
-  width: 100%;
+  margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-3));
+  width: calc(100% + 2 * var(--space-3));
 }
 
 .tool-file-path {
@@ -1349,6 +1984,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   padding: var(--space-4);
   margin-left: 0;
+  margin-bottom: var(--space-4);
 }
 
 /* Legacy message styles (for backward compatibility) */
@@ -1388,7 +2024,7 @@ onBeforeUnmount(() => {
 
 .message-text {
   line-height: 1.8;
-  font-size: 15px;
+  font-size: 16px;
   user-select: text;
   -webkit-user-select: text;
   color: var(--foreground);
@@ -1400,7 +2036,7 @@ onBeforeUnmount(() => {
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .message-text :deep(strong) {
@@ -1421,7 +2057,9 @@ onBeforeUnmount(() => {
 .status-indicator {
   display: flex;
   align-items: center;
+  gap: var(--space-2);
   margin-top: var(--space-2);
+  margin-bottom: var(--space-4);
   padding-top: var(--space-2);
 }
 
@@ -1455,7 +2093,6 @@ onBeforeUnmount(() => {
 .chat-input-container {
   padding: var(--space-2);
   background: var(--muted);
-  border-top: 1px solid var(--border);
 }
 
 .input-wrapper {
@@ -1632,7 +2269,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   color: var(--foreground);
-  font-size: 14px;
+  font-size: 15px;
   font-family: inherit;
   resize: none;
   min-height: var(--input-md);
@@ -1655,25 +2292,29 @@ onBeforeUnmount(() => {
 }
 
 .transcribing-text {
-  font-size: 14px;
+  font-size: 15px;
   font-family: inherit;
-  color: var(--foreground);
+  color: var(--muted-foreground);
   opacity: 0.7;
+}
+
+.transcribing-text.shimmer-text {
   background: linear-gradient(
-    90deg,
-    var(--foreground) 0%,
-    var(--foreground) 30%,
-    color-mix(in srgb, var(--foreground) 80%, white 20%) 45%,
-    color-mix(in srgb, var(--foreground) 40%, white 60%) 50%,
-    color-mix(in srgb, var(--foreground) 80%, white 20%) 55%,
-    var(--foreground) 70%,
-    var(--foreground) 100%
+    270deg,
+    var(--muted-foreground) 0%,
+    var(--muted-foreground) 35%,
+    color-mix(in srgb, var(--muted-foreground) 20%, white 80%) 42%,
+    white 50%,
+    color-mix(in srgb, var(--muted-foreground) 20%, white 80%) 58%,
+    var(--muted-foreground) 65%,
+    var(--muted-foreground) 100%
   );
-  background-size: 300% 100%;
+  background-size: 400% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: shimmer-sweep 2.5s infinite;
+  opacity: 0.7;
+  animation: shimmer-sweep-reverse 3.5s linear infinite;
 }
 
 @keyframes shimmer-sweep {
@@ -1682,6 +2323,15 @@ onBeforeUnmount(() => {
   }
   100% {
     background-position: 200% 0;
+  }
+}
+
+@keyframes shimmer-sweep-reverse {
+  0% {
+    background-position: 400% 0;
+  }
+  100% {
+    background-position: -100% 0;
   }
 }
 
@@ -1710,7 +2360,7 @@ onBeforeUnmount(() => {
   background: var(--destructive-background);
   color: var(--destructive);
   border-radius: var(--radius-sm);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 @keyframes fadeIn {
@@ -1757,26 +2407,48 @@ onBeforeUnmount(() => {
 }
 
 .status-text {
-  font-size: 14px;
-  color: var(--foreground);
+  font-size: 13px;
+  color: var(--muted-foreground);
   font-weight: 500;
+  opacity: 0.7;
 }
 
 .status-text.shimmer-text {
   background: linear-gradient(
-    90deg,
-    var(--foreground) 0%,
-    var(--foreground) 30%,
-    color-mix(in srgb, var(--foreground) 80%, white 20%) 45%,
-    color-mix(in srgb, var(--foreground) 40%, white 60%) 50%,
-    color-mix(in srgb, var(--foreground) 80%, white 20%) 55%,
-    var(--foreground) 70%,
-    var(--foreground) 100%
+    270deg,
+    var(--muted-foreground) 0%,
+    var(--muted-foreground) 35%,
+    color-mix(in srgb, var(--muted-foreground) 20%, white 80%) 42%,
+    white 50%,
+    color-mix(in srgb, var(--muted-foreground) 20%, white 80%) 58%,
+    var(--muted-foreground) 65%,
+    var(--muted-foreground) 100%
   );
-  background-size: 300% 100%;
+  background-size: 400% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: shimmer-sweep 2.5s infinite;
+  opacity: 0.7;
+  animation: shimmer-sweep-reverse 3.5s linear infinite;
+}
+
+.status-indicator .status-text.shimmer-text,
+.turn-loading .status-text.shimmer-text {
+  background: linear-gradient(
+    270deg,
+    var(--muted-foreground) 0%,
+    var(--muted-foreground) 35%,
+    color-mix(in srgb, var(--muted-foreground) 20%, white 80%) 42%,
+    white 50%,
+    color-mix(in srgb, var(--muted-foreground) 20%, white 80%) 58%,
+    var(--muted-foreground) 65%,
+    var(--muted-foreground) 100%
+  );
+  background-size: 400% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  opacity: 0.7;
+  animation: shimmer-sweep-reverse 3.5s linear infinite;
 }
 </style>

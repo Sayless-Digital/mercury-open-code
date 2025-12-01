@@ -726,8 +726,8 @@ const getFileIcon = (filePath) => {
   overflow-y: hidden;
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-  height: 28px;
-  min-height: 28px;
+  height: var(--header-md);
+  min-height: var(--header-md);
   margin: 0;
   gap: var(--space-2);
 }
