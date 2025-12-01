@@ -80,11 +80,7 @@ mercury
                   <template v-for="(part, partIndex) in assistantMsg.parts" :key="part.id">
                     <!-- Text Part -->
                     <div v-if="part.type === 'text'" class="message-part text-part">
-                      <div 
-                        class="text-content" 
-                        :key="`text-${part.id}-${part.text?.length || 0}`"
-                        v-html="formatMessage(part.text)"
-                      ></div>
+                      <div class="text-content" v-html="formatMessage(part.text)"></div>
                     </div>
                     
                     <!-- Tool Part -->
@@ -362,6 +358,7 @@ mercury
 
 <script setup>
 import { ref, computed, nextTick, watch, onBeforeUnmount } from 'vue';
+import { marked } from 'marked';
 import {
   Mic, Square, Send, Loader2, Eraser, Brain, RefreshCw, ChevronDown, FileText, CheckSquare,
   Search, FileEdit, FilePlus, FolderOpen, Globe, Terminal, ListTodo
@@ -1066,11 +1063,148 @@ const hasVisibleContent = (part) => {
 
 const formatMessage = (content) => {
   if (!content) return '';
-  return content
-    .replace(/\n/g, '<br>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  
+  try {
+    // Configure marked options
+    marked.setOptions({
+      breaks: true, // Convert \n to <br>
+      gfm: true, // GitHub Flavored Markdown
+    });
+    
+    // Parse markdown to HTML
+    let html = marked.parse(content);
+    
+    // Add color previews for color codes
+    html = addColorPreviews(html);
+    
+    return html;
+  } catch (error) {
+    console.error('Markdown parsing error:', error);
+    // Fallback to basic formatting if parsing fails
+    return content
+      .replace(/\n/g, '<br>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  }
+};
+
+const isValidColor = (color) => {
+  // Check if it's a valid CSS color
+  const s = new Option().style;
+  s.color = color;
+  return s.color !== '';
+};
+
+const addColorPreviews = (html) => {
+  // Match hex colors (#rgb, #rrggbb, #rrggbbaa) - but not inside code blocks
+  const hexPattern = /#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})\b/g;
+  
+  // Match rgb/rgba colors
+  const rgbPattern = /rgba?\([^)]+\)/g;
+  
+  // Match hsl/hsla colors
+  const hslPattern = /hsla?\([^)]+\)/g;
+  
+  // Match common color names (basic set)
+  const colorNames = ['red', 'blue', 'green', 'yellow', 'orange', 'purple', 'pink', 'black', 'white', 'gray', 'grey', 'cyan', 'magenta', 'lime', 'navy', 'teal', 'olive', 'maroon', 'silver', 'gold'];
+  const colorNamePattern = new RegExp(`\\b(${colorNames.join('|')})\\b`, 'gi');
+  
+  // Helper to determine text color (light or dark) based on background
+  const getContrastColor = (color) => {
+    // Simple contrast calculation - if color is dark, use white text, else black
+    const hex = color.replace('#', '');
+    if (hex.length === 3) {
+      const r = parseInt(hex[0] + hex[0], 16);
+      const g = parseInt(hex[1] + hex[1], 16);
+      const b = parseInt(hex[2] + hex[2], 16);
+      const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+      return brightness < 128 ? '#ffffff' : '#000000';
+    } else if (hex.length === 6 || hex.length === 8) {
+      const r = parseInt(hex.substring(0, 2), 16);
+      const g = parseInt(hex.substring(2, 4), 16);
+      const b = parseInt(hex.substring(4, 6), 16);
+      const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+      return brightness < 128 ? '#ffffff' : '#000000';
+    }
+    // For named colors, use a simple heuristic
+    const darkColors = ['black', 'navy', 'maroon', 'purple', 'olive'];
+    return darkColors.includes(color.toLowerCase()) ? '#ffffff' : '#000000';
+  };
+  
+  // Process code blocks separately - replace colors inside code blocks
+  html = html.replace(/<code>([^<]*)<\/code>/g, (match, codeContent) => {
+    let processed = codeContent;
+    
+    // Replace hex colors in code
+    processed = processed.replace(hexPattern, (colorMatch) => {
+      if (isValidColor(colorMatch)) {
+        return `<span class="color-code"><span class="color-swatch" style="background-color: ${colorMatch}"></span>${colorMatch}</span>`;
+      }
+      return colorMatch;
+    });
+    
+    // Replace rgb/rgba in code
+    processed = processed.replace(rgbPattern, (colorMatch) => {
+      if (isValidColor(colorMatch)) {
+        return `<span class="color-code"><span class="color-swatch" style="background-color: ${colorMatch}"></span>${colorMatch}</span>`;
+      }
+      return colorMatch;
+    });
+    
+    // Replace hsl/hsla in code
+    processed = processed.replace(hslPattern, (colorMatch) => {
+      if (isValidColor(colorMatch)) {
+        return `<span class="color-code"><span class="color-swatch" style="background-color: ${colorMatch}"></span>${colorMatch}</span>`;
+      }
+      return colorMatch;
+    });
+    
+    // Replace color names in code
+    processed = processed.replace(colorNamePattern, (colorName) => {
+      if (isValidColor(colorName)) {
+        return `<span class="color-code"><span class="color-swatch" style="background-color: ${colorName}"></span>${colorName}</span>`;
+      }
+      return colorName;
+    });
+    
+    return `<code>${processed}</code>`;
+  });
+  
+  // Replace colors outside of code blocks (in regular text)
+  const parts = html.split(/(<code>[\s\S]*?<\/code>)/g);
+  for (let i = 0; i < parts.length; i += 2) {
+    // Only process parts that are NOT code blocks
+    let text = parts[i];
+    
+    // Replace hex colors
+    text = text.replace(hexPattern, (match) => {
+      if (isValidColor(match)) {
+        return `<span class="color-code"><span class="color-swatch" style="background-color: ${match}"></span>${match}</span>`;
+      }
+      return match;
+    });
+    
+    // Replace rgb/rgba
+    text = text.replace(rgbPattern, (match) => {
+      if (isValidColor(match)) {
+        return `<span class="color-code"><span class="color-swatch" style="background-color: ${match}"></span>${match}</span>`;
+      }
+      return match;
+    });
+    
+    // Replace hsl/hsla
+    text = text.replace(hslPattern, (match) => {
+      if (isValidColor(match)) {
+        return `<span class="color-code"><span class="color-swatch" style="background-color: ${match}"></span>${match}</span>`;
+      }
+      return match;
+    });
+    
+    parts[i] = text;
+  }
+  
+  return parts.join('');
 };
 
 const scrollToBottom = () => {
@@ -1602,16 +1736,162 @@ onBeforeUnmount(() => {
 .text-part .text-content {
   color: var(--foreground);
   line-height: 1.6;
-  white-space: pre-wrap;
   word-wrap: break-word;
   padding: 0;
   margin: 0;
   font-size: 13px;
-  will-change: contents;
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+}
+
+/* Markdown styling */
+.text-content :deep(h1) {
+  margin: var(--space-8) 0 var(--space-4) 0;
+  font-weight: 600;
+  line-height: 1.4;
+  font-size: 1.5em;
+}
+
+.text-content :deep(h1:first-child) {
+  margin-top: 0;
+}
+
+.text-content :deep(h2),
+.text-content :deep(h3),
+.text-content :deep(h4),
+.text-content :deep(h5),
+.text-content :deep(h6) {
+  margin: var(--space-6) 0 var(--space-3) 0;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.text-content :deep(h2) {
+  font-size: 1.3em;
+}
+
+.text-content :deep(h3) {
+  font-size: 1.1em;
+}
+
+.text-content :deep(p) {
+  margin: var(--space-3) 0;
+}
+
+.text-content :deep(ul),
+.text-content :deep(ol) {
+  margin: var(--space-4) var(--space-6) var(--space-4) var(--space-8);
+  padding-left: var(--space-4);
+}
+
+.text-content :deep(li) {
+  margin: var(--space-2) 0;
+  padding-left: 0;
+}
+
+.text-content :deep(ul) {
+  list-style-type: disc;
+}
+
+.text-content :deep(ol) {
+  list-style-type: decimal;
+}
+
+.text-content :deep(ul ul),
+.text-content :deep(ol ol),
+.text-content :deep(ul ol),
+.text-content :deep(ol ul) {
+  margin-top: var(--space-2);
+  margin-bottom: var(--space-2);
+  margin-left: var(--space-4);
+  padding-left: var(--space-4);
+}
+
+.text-content :deep(code) {
+  background: var(--muted);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.text-content :deep(.color-code) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  vertical-align: middle;
+}
+
+.text-content :deep(.color-swatch) {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  vertical-align: middle;
+  margin-bottom: 1px;
+}
+
+.text-content :deep(pre) {
+  background: var(--muted);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  margin: var(--space-4) 0;
+}
+
+.text-content :deep(pre code) {
+  background: transparent;
+  padding: 0;
+}
+
+.text-content :deep(blockquote) {
+  border-left: 3px solid var(--border);
+  padding-left: var(--space-3);
+  margin: var(--space-4) 0;
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+.text-content :deep(a) {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.text-content :deep(a:hover) {
+  opacity: 0.8;
+}
+
+.text-content :deep(strong) {
+  font-weight: 600;
+}
+
+.text-content :deep(em) {
+  font-style: italic;
+}
+
+.text-content :deep(hr) {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: var(--space-6) 0;
+}
+
+.text-content :deep(table) {
+  border-collapse: collapse;
+  margin: var(--space-8) var(--space-6);
+  width: calc(100% - var(--space-12));
+  max-width: calc(100% - var(--space-12));
+}
+
+.text-content :deep(th),
+.text-content :deep(td) {
+  border: 1px solid var(--border);
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+}
+
+.text-content :deep(th) {
+  background: var(--muted);
+  font-weight: 600;
 }
 
 .tool-part {

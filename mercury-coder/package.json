@@ -46,6 +46,7 @@
     "better-sqlite3": "^9.2.2",
     "chokidar": "^4.0.3",
     "lucide-vue-next": "^0.555.0",
+    "marked": "^17.0.1",
     "monaco-editor": "^0.45.0",
     "node-fetch": "^2.7.0",
     "node-pty": "^1.0.0",
