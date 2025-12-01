@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# Load credentials from .bashrc
+export AWS_BEARER_TOKEN_BEDROCK=ABSKQmVkcm9ja0FQSUtleS15a2FpLWF0LTQ4NzM3NTg4MzYyNTpBNFlrQnNOVFJ5QVZEanlLTkIwbjM2ZU01ZzNtbXF4MnYvMHNsTEM3aGZXcFgvekxRNjdLWXpXaDhqZz0=
+export AWS_REGION=us-east-2
+
+echo "=========================================="
+echo "Starting OpenCode with AWS Bedrock"
+echo "=========================================="
+echo ""
+echo "✓ AWS_BEARER_TOKEN_BEDROCK is set"
+echo "✓ AWS_REGION: $AWS_REGION"
+echo "✓ AWS SDK packages installed"
+echo ""
+echo "Important: Make sure you've enabled model access in AWS Bedrock Console"
+echo "Visit: https://console.aws.amazon.com/bedrock/"
+echo ""
+echo "Starting OpenCode..."
+echo ""
+
+# Start OpenCode with bun
+~/.bun/bin/bun dev

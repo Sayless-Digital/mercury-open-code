@@ -1,101 +1,251 @@
-<p align="center">
-  <a href="https://opencode.ai">
-    <picture>
-      <source srcset="packages/console/app/src/asset/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
-      <source srcset="packages/console/app/src/asset/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
-      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="OpenCode logo">
-    </picture>
-  </a>
-</p>
-<p align="center">The AI coding agent built for the terminal.</p>
-<p align="center">
-  <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
-  <a href="https://github.com/sst/opencode/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/sst/opencode/publish.yml?style=flat-square&branch=dev" /></a>
-</p>
+# Mercury Open Code - Integrated AI Coding Platform
 
-[![OpenCode Terminal UI](packages/web/src/assets/lander/screenshot.png)](https://opencode.ai)
+This repository combines **OpenCode** (AI coding agent backend) with **Mercury Coder** (Electron-based IDE frontend) to create a powerful, integrated AI-powered development environment.
+
+## 🏗️ Project Structure
+
+```
+mercury-open-code/
+├── opencode-backend/      # OpenCode AI agent backend
+│   ├── packages/
+│   │   ├── opencode/     # Core OpenCode logic
+│   │   ├── sdk/          # SDKs (JS/Go)
+│   │   ├── desktop/      # Web-based UI
+│   │   └── ...
+│   ├── package.json
+│   └── turbo.json
+│
+├── mercury-coder/         # Mercury Coder Electron IDE
+│   ├── electron/         # Electron main process
+│   ├── src/              # Vue.js frontend
+│   ├── backend/          # Python FastAPI backend
+│   └── package.json
+│
+├── README.md             # This file
+└── INTEGRATION_GUIDE.md  # Integration instructions
+```
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- **Node.js** 18+
+- **Bun** 1.3+ (install via: `curl -fsSL https://bun.sh/install | bash`)
+- **AWS Account** with Bedrock access (optional, for AI features)
+
+### 1. Install Dependencies
+
+```bash
+# Install OpenCode backend dependencies
+cd opencode-backend
+bun install
+cd ..
+
+# Install Mercury Coder dependencies
+cd mercury-coder
+npm install
+cd ..
+```
+
+### 2. Configure AI Provider (Optional)
+
+The system uses OpenCode's configuration for AI providers:
+
+```bash
+# Create OpenCode config (optional - will use defaults if not set)
+cd mercury-coder
+cp config.json.example config.json
+# Edit config.json to set your preferred AI model and provider
+```
+
+For AWS Bedrock specifically, see `opencode-backend/AWS_BEDROCK_SETUP.md`
+
+### 3. Run Mercury Coder with Local OpenCode Backend
+
+The easiest way to run the entire integrated system:
+
+```bash
+cd mercury-coder
+
+# Using bash script (Linux/Mac):
+./start.sh
+
+# OR using Python script (cross-platform):
+python3 start.py
+```
+
+This will:
+1. Install OpenCode backend dependencies (if needed)
+2. Start the local OpenCode backend on port 4096
+3. Start the Vite dev server on port 5173
+4. Launch the Electron desktop app
+
+**Manual Start (Advanced):**
+
+If you prefer to run components separately:
+
+**Terminal 1: OpenCode Backend**
+```bash
+cd opencode-backend
+bun run --cwd packages/opencode --conditions=browser src/index.ts serve --port 4096 --hostname 127.0.0.1 --print-logs
+```
+
+**Terminal 2: Mercury Coder Frontend & Electron**
+```bash
+cd mercury-coder
+npm run dev
+```
+
+## 🎯 Components
+
+### OpenCode Backend
+- **Purpose**: AI coding agent with multi-provider support
+- **Tech Stack**: TypeScript, Bun, SolidJS
+- **Features**:
+  - Multiple AI agents (build, plan, general, explore)
+  - Multi-provider support (Anthropic, OpenAI, Google, AWS Bedrock)
+  - Tool execution framework
+  - Session management
+  - WebSocket/SSE streaming
+
+### Mercury Coder
+- **Purpose**: Full-featured Electron-based IDE
+- **Tech Stack**: Electron, Vue.js, Monaco Editor, Python FastAPI
+- **Features**:
+  - Monaco code editor (same as VS Code)
+  - Integrated terminal (xterm.js)
+  - File manager with tree view
+  - AI chat assistant
+  - Delegate agent panel
+  - Project management with SQLite
+
+## 🔌 Integration Status
+
+Mercury Coder is now **fully integrated** with the local OpenCode backend:
+
+✅ **What's Integrated:**
+- Mercury Coder uses local `opencode-backend` instead of global installation
+- Local SDK linked from `opencode-backend/packages/sdk/js`
+- Electron app launches local OpenCode backend automatically
+- Startup scripts handle the full stack
+- Single unified development environment
+
+🎯 **Benefits:**
+- Full control over OpenCode backend source code
+- Immediate access to OpenCode features and updates
+- No version conflicts with global installations
+- Easy debugging and customization
+- Multiple AI providers (Anthropic, OpenAI, Google, AWS Bedrock)
+- Advanced agent system (general, explore, build, plan)
+- Tool execution framework
+- WebSocket/SSE streaming support
+
+## 📚 Documentation
+
+- **OpenCode Documentation**: `opencode-backend/README.md`
+- **Mercury Coder Documentation**: `mercury-coder/README.md`
+- **Integration Guide**: `INTEGRATION_GUIDE.md` (see below)
+- **OpenCode API Docs**: https://opencode.ai/docs
+- **Contributing**: `opencode-backend/CONTRIBUTING.md`
+
+## 🛠️ Development
+
+### Working on OpenCode Backend
+```bash
+cd opencode-backend/packages/opencode
+bun dev
+```
+
+### Working on Mercury Coder
+```bash
+cd mercury-coder
+npm run dev
+```
+
+### Running Tests
+
+**OpenCode Tests:**
+```bash
+cd opencode-backend
+bun test
+```
+
+**Mercury Coder Tests:**
+```bash
+cd mercury-coder/backend
+pytest
+```
+
+## 🔧 Configuration
+
+### OpenCode Configuration
+- Location: `opencode-backend/packages/opencode/opencode.json`
+- Global config: `~/.config/opencode/`
+
+### Mercury Coder Configuration
+- AI model/provider: `mercury-coder/config.json` (follows OpenCode's config schema)
+- Database: Stored in Electron userData directory
+- Settings: Managed via UI (accessible from Settings panel)
+
+## 🎨 Customization
+
+### Change AI Provider (OpenCode)
+Edit `opencode-backend/packages/opencode/opencode.json`:
+```json
+{
+  "model": "anthropic/claude-sonnet-4",
+  "provider": {
+    "anthropic": {
+      "apiKey": "your-key"
+    }
+  }
+}
+```
+
+### Change UI Theme (Mercury Coder)
+Edit `mercury-coder/src/style.css`
+
+## 🚢 Building for Production
+
+### Build OpenCode
+```bash
+cd opencode-backend/packages/opencode
+bun run build
+```
+
+### Build Mercury Coder
+```bash
+cd mercury-coder
+npm run build          # Current platform
+npm run build:win      # Windows
+npm run build:mac      # macOS
+npm run build:linux    # Linux
+```
+
+## 🤝 Contributing
+
+See `opencode-backend/CONTRIBUTING.md` for contribution guidelines.
+
+## 📄 License
+
+- **OpenCode**: MIT License (see `opencode-backend/LICENSE`)
+- **Mercury Coder**: MIT License (see `mercury-coder/README.md`)
+
+## 🆘 Support
+
+- **OpenCode Discord**: https://discord.gg/opencode
+- **Issues**: Create issues in the respective directories
+- **Documentation**: https://opencode.ai/docs
+
+## 🎯 Roadmap
+
+- [ ] Complete OpenCode-Mercury Coder integration
+- [ ] Unified authentication system
+- [ ] Shared configuration management
+- [ ] Mobile app support
+- [ ] Cloud sync features
+- [ ] Team collaboration features
 
 ---
 
-### Installation
-
-```bash
-# YOLO
-curl -fsSL https://opencode.ai/install | bash
-
-# Package managers
-npm i -g opencode-ai@latest        # or bun/pnpm/yarn
-scoop bucket add extras; scoop install extras/opencode  # Windows
-choco install opencode             # Windows
-brew install opencode              # macOS and Linux
-paru -S opencode-bin               # Arch Linux
-mise use --pin -g ubi:sst/opencode # Any OS
-nix run nixpkgs#opencode           # or github:sst/opencode for latest dev branch
-```
-
-> [!TIP]
-> Remove versions older than 0.1.x before installing.
-
-#### Installation Directory
-
-The install script respects the following priority order for the installation path:
-
-1. `$OPENCODE_INSTALL_DIR` - Custom installation directory
-2. `$XDG_BIN_DIR` - XDG Base Directory Specification compliant path
-3. `$HOME/bin` - Standard user binary directory (if exists or can be created)
-4. `$HOME/.opencode/bin` - Default fallback
-
-```bash
-# Examples
-OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bash
-XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
-```
-
-### Agents
-
-OpenCode includes two built-in agents you can switch between,
-you can switch between these using the `Tab` key.
-
-- **build** - Default, full access agent for development work
-- **plan** - Read-only agent for analysis and code exploration
-  - Denies file edits by default
-  - Asks permission before running bash commands
-  - Ideal for exploring unfamiliar codebases or planning changes
-
-Also, included is a **general** subagent for complex searches and multi-step tasks.
-This is used internally and can be invoked using `@general` in messages.
-
-Learn more about [agents](https://opencode.ai/docs/agents).
-
-### Documentation
-
-For more info on how to configure OpenCode [**head over to our docs**](https://opencode.ai/docs).
-
-### Contributing
-
-If you're interested in contributing to OpenCode, please read our [contributing docs](./CONTRIBUTING.md) before submitting a pull request.
-
-### Building on OpenCode
-
-If you are working on a project that's related to OpenCode and is using "opencode" as a part of its name; for example, "opencode-dashboard" or "opencode-mobile", please add a note to your README to clarify that it is not built by the OpenCode team and is not affiliated with us in anyway.
-
-### FAQ
-
-#### How is this different than Claude Code?
-
-It's very similar to Claude Code in terms of capability. Here are the key differences:
-
-- 100% open source
-- Not coupled to any provider. Although we recommend the models we provide through [OpenCode Zen](https://opencode.ai/zen); OpenCode can be used with Claude, OpenAI, Google or even local models. As models evolve the gaps between them will close and pricing will drop so being provider-agnostic is important.
-- Out of the box LSP support
-- A focus on TUI. OpenCode is built by neovim users and the creators of [terminal.shop](https://terminal.shop); we are going to push the limits of what's possible in the terminal.
-- A client/server architecture. This for example can allow OpenCode to run on your computer, while you can drive it remotely from a mobile app. Meaning that the TUI frontend is just one of the possible clients.
-
-#### What's the other repo?
-
-The other confusingly named repo has no relation to this one. You can [read the story behind it here](https://x.com/thdxr/status/1933561254481666466).
-
----
-
-**Join our community** [Discord](https://discord.gg/opencode) | [X.com](https://x.com/opencode)
+**Getting Started**: See `INTEGRATION_GUIDE.md` for step-by-step integration instructions.
