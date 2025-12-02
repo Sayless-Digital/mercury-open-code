@@ -4,20 +4,50 @@ mercury
     <!-- Header -->
     <div class="chat-header">
       <div class="header-left">
-        <div class="app-logo">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-            <circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="2.5"/>
-            <circle cx="10" cy="10" r="3.5" stroke="currentColor" stroke-width="2.5"/>
-          </svg>
+        <div class="header-tabs" ref="headerTabsRef">
+          <div 
+            class="header-tabs-background"
+            :style="backgroundStyle"
+          ></div>
+          <button 
+            ref="mercuryTabRef"
+            class="header-tab"
+            :class="{ active: !showHistory }"
+            @click="showHistory = false"
+          >
+            <div class="app-logo">
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+                <circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="2.5"/>
+                <circle cx="10" cy="10" r="3.5" stroke="currentColor" stroke-width="2.5"/>
+              </svg>
+      </div>
+            <span class="header-tab-label">Mercury Coder</span>
+          </button>
+          <button 
+            ref="historyTabRef"
+            class="header-tab"
+            :class="{ active: showHistory }"
+            @click="showHistory = true"
+          >
+            <History :size="16" />
+            <span class="header-tab-label">History</span>
+      </button>
         </div>
-        <span class="chat-title">Mercury Coder</span>
       </div>
     </div>
+    
+    <!-- Session History View -->
+    <SessionHistory v-if="showHistory" />
+    
+    <!-- Chat View -->
+    <template v-else>
+      <!-- Session Tabs -->
+      <SessionTabs />
     
     <!-- Task Control Panel -->
     <TaskControlPanel />
     
-    <!-- Messages Area - OpenCode-style turns -->
+      <!-- Messages Area - OpenCode-style turns -->
     <div class="chat-messages" ref="messagesContainer">
       <!-- Debug info (remove in production) -->
       <div v-if="false" style="padding: 10px; background: #f0f0f0; font-size: 12px; margin: 10px;">
@@ -41,14 +71,14 @@ mercury
       
       <!-- Fallback: Show legacy messages if turns are empty but messages exist -->
       <template v-if="turns.length === 0 && messages.length > 0">
-        <template v-for="(message, index) in messages" :key="message.id">
-          <div class="message" :class="message.role">
-            <div class="message-content">
-              <div v-if="message.content" class="message-text" v-html="formatMessage(message.content)"></div>
-              <div v-if="message.streaming" class="streaming-indicator">
-                <span class="typing-dot"></span>
-                <span class="typing-dot"></span>
-                <span class="typing-dot"></span>
+      <template v-for="(message, index) in messages" :key="message.id">
+        <div class="message" :class="message.role">
+          <div class="message-content">
+            <div v-if="message.content" class="message-text" v-html="formatMessage(message.content)"></div>
+            <div v-if="message.streaming" class="streaming-indicator">
+              <span class="typing-dot"></span>
+              <span class="typing-dot"></span>
+              <span class="typing-dot"></span>
               </div>
             </div>
           </div>
@@ -307,63 +337,64 @@ mercury
           >
             <Mic :size="18" fill="currentColor" />
           </button>
-          <button
-            v-if="isRecording"
-            class="stop-button"
-            @click="stopRecording"
-            :disabled="loading"
-            title="Stop recording"
-          >
+        <button
+          v-if="isRecording"
+          class="stop-button"
+          @click="stopRecording"
+          :disabled="loading"
+          title="Stop recording"
+        >
             <Square :size="10" fill="currentColor" />
+        </button>
+        <button
+          v-if="isRecording && inputText.trim()"
+          class="send-button"
+          @click="sendMessage"
+          :disabled="loading || !inputText.trim()"
+          title="Send message"
+        >
+            <ArrowUp :size="14" fill="currentColor" />
+        </button>
+        <button
+          v-else-if="isTranscribingFinal || isTranscribing.value"
+          class="loading-button"
+          disabled
+          title="Transcribing..."
+        >
+            <Loader2 :size="14" class="spinner" fill="currentColor" />
+        </button>
+        <template v-else-if="inputText.trim()">
+          <button
+            class="clear-input-button"
+            @click="clearInput"
+            :disabled="loading"
+            title="Clear input"
+          >
+              <Eraser :size="16" />
           </button>
           <button
-            v-if="isRecording && inputText.trim()"
             class="send-button"
             @click="sendMessage"
             :disabled="loading || !inputText.trim()"
             title="Send message"
           >
-            <ArrowUp :size="14" fill="currentColor" />
-          </button>
-          <button
-            v-else-if="isTranscribingFinal || isTranscribing.value"
-            class="loading-button"
-            disabled
-            title="Transcribing..."
-          >
-            <Loader2 :size="14" class="spinner" fill="currentColor" />
-          </button>
-          <template v-else-if="inputText.trim()">
-            <button
-              class="clear-input-button"
-              @click="clearInput"
-              :disabled="loading"
-              title="Clear input"
-            >
-              <Eraser :size="16" />
-            </button>
-            <button
-              class="send-button"
-              @click="sendMessage"
-              :disabled="loading || !inputText.trim()"
-              title="Send message"
-            >
               <ArrowUp :size="14" fill="currentColor" />
-            </button>
-          </template>
-          <button
-            v-else-if="!autoRecordMode"
-            class="voice-button voice-button-inline"
-            @click="startRecordingAtCursor"
-            :disabled="loading"
-            title="Start recording"
-          >
-            <Mic :size="16" />
           </button>
+        </template>
+        <button
+          v-else-if="!autoRecordMode"
+          class="voice-button voice-button-inline"
+          @click="startRecordingAtCursor"
+          :disabled="loading"
+          title="Start recording"
+        >
+          <Mic :size="16" />
+        </button>
         </div>
       </div>
       <div v-if="error" class="error-message">{{ error }}</div>
     </div>
+    </template>
   </div>
 </template>
 
@@ -373,19 +404,23 @@ import { marked } from 'marked';
 import {
   Mic, Square, Send, Loader2, Eraser, Brain, RefreshCw, ChevronDown, FileText, CheckSquare,
   Search, FileEdit, FilePlus, FolderOpen, Globe, Terminal, ListTodo, ArrowUp, ChevronUp,
-  Hammer, ClipboardList, Building, Wrench
+  Hammer, ClipboardList, Building, Wrench, History
 } from 'lucide-vue-next';
 import { useChatStore } from '@/stores/chat';
 import { useProjectStore } from '@/stores/project';
 import { useSettingsStore } from '@/stores/settings';
+import { useSessionStore } from '@/stores/session';
 import TaskControlPanel from './TaskControlPanel.vue';
 import WorkflowSummaryCard from './WorkflowSummaryCard.vue';
 import SideBySideDiff from './SideBySideDiff.vue';
 import CustomDropdown from './CustomDropdown.vue';
+import SessionTabs from './SessionTabs.vue';
+import SessionHistory from './SessionHistory.vue';
 
 const chatStore = useChatStore();
 const projectStore = useProjectStore();
 const settingsStore = useSettingsStore();
+const sessionStore = useSessionStore();
 
 const messages = computed(() => chatStore.messages); // Legacy support
 const turns = computed(() => chatStore.turns); // New turn-based structure
@@ -394,6 +429,44 @@ const error = computed(() => chatStore.error);
 const autoRecordMode = computed(() => settingsStore.autoRecordMode);
 const whisperModelId = computed(() => settingsStore.whisperModelId);
 const workflowState = computed(() => chatStore.workflowState);
+
+// View toggle: chat or history
+const showHistory = ref(false);
+const headerTabsRef = ref(null);
+const mercuryTabRef = ref(null);
+const historyTabRef = ref(null);
+
+// Computed style for sliding background
+const backgroundStyle = computed(() => {
+  if (!mercuryTabRef.value || !historyTabRef.value || !headerTabsRef.value) {
+    return {
+      width: '0px',
+      transform: 'translateX(0)'
+    };
+  }
+
+  const activeTab = showHistory.value ? historyTabRef.value : mercuryTabRef.value;
+  const tabsContainer = headerTabsRef.value;
+  
+  const activeTabRect = activeTab.getBoundingClientRect();
+  const containerRect = tabsContainer.getBoundingClientRect();
+  
+  const width = activeTabRect.width;
+  const leftOffset = activeTabRect.left - containerRect.left;
+  
+  return {
+    width: `${width}px`,
+    transform: `translateX(${leftOffset}px)`
+  };
+});
+
+// Watch for tab changes to update background position
+watch(showHistory, () => {
+  // Force a re-render by triggering a style recalculation
+  nextTick(() => {
+    // The computed property will automatically update
+  });
+});
 
 // Agent selection - initialize with default agent from settings
 const selectedAgent = ref(settingsStore.defaultAgent);
@@ -1127,11 +1200,11 @@ const formatMessage = (content) => {
   } catch (error) {
     console.error('Markdown parsing error:', error);
     // Fallback to basic formatting if parsing fails
-    return content
-      .replace(/\n/g, '<br>')
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  return content
+    .replace(/\n/g, '<br>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>');
   }
 };
 
@@ -1260,6 +1333,33 @@ const scrollToBottom = () => {
     }
   });
 };
+
+// Watch for session changes and reload messages
+watch(() => sessionStore.activeSessionId, async (newSessionId, oldSessionId) => {
+  if (newSessionId && newSessionId !== oldSessionId) {
+    console.log('[ChatPanel] Session changed, reloading messages:', newSessionId)
+    // Clear current messages
+    chatStore.clearMessages()
+    // Load messages for the new session and add them to the message map
+    // The getMessages API returns an array of { info: Message, parts: Part[] }
+    const messages = await chatStore.opencode.getMessages()
+    if (messages && Array.isArray(messages)) {
+      messages.forEach(msg => {
+        if (msg.info && msg.parts) {
+          // Add message to the messageMap in the format expected by the store
+          chatStore.messageMap.value.set(msg.info.id, {
+            info: msg.info,
+            parts: msg.parts || []
+          })
+        }
+      })
+      console.log('[ChatPanel] Loaded', messages.length, 'messages for session', newSessionId)
+    }
+    // Scroll to bottom after messages load
+    await nextTick()
+    scrollToBottom()
+  }
+}, { immediate: false })
 
 // Watch for new turns or updates to scroll to bottom
 watch(() => turns.value.length, () => {
@@ -1635,6 +1735,62 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+.header-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  position: relative;
+  background: var(--accent);
+  border-radius: var(--radius-full);
+  padding: var(--space-1);
+}
+
+.header-tabs-background {
+  position: absolute;
+  top: var(--space-1);
+  left: 0;
+  height: calc(100% - var(--space-1) * 2);
+  background: var(--background);
+  border-radius: var(--radius-full);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.header-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.2s ease;
+  white-space: nowrap;
+  position: relative;
+  z-index: 1;
+}
+
+.header-tab:hover {
+  color: var(--foreground);
+}
+
+.header-tab.active {
+  color: var(--foreground);
+}
+
+.header-tab .app-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header-tab-label {
+  font-weight: 500;
 }
 
 .app-logo {

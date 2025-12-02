@@ -409,6 +409,72 @@ export function useOpencode() {
     console.log('[useOpencode] Loading state cleared manually')
   }
 
+  /**
+   * List all sessions for the current project
+   */
+  async function listSessions() {
+    try {
+      const result = await client.value.session.list()
+      return result.data || []
+    } catch (err) {
+      error.value = err.message
+      console.error('[useOpencode] List sessions error:', err)
+      return []
+    }
+  }
+
+  /**
+   * Get a specific session by ID
+   */
+  async function getSession(sessionIdParam) {
+    try {
+      const result = await client.value.session.get({
+        path: { id: sessionIdParam }
+      })
+      return result.data || null
+    } catch (err) {
+      error.value = err.message
+      console.error('[useOpencode] Get session error:', err)
+      return null
+    }
+  }
+
+  /**
+   * Switch to a different session
+   */
+  async function switchSession(sessionIdParam) {
+    try {
+      sessionId.value = sessionIdParam
+      // Load messages for the new session
+      await getMessages()
+      return true
+    } catch (err) {
+      error.value = err.message
+      console.error('[useOpencode] Switch session error:', err)
+      return false
+    }
+  }
+
+  /**
+   * Delete a session
+   */
+  async function deleteSession(sessionIdParam) {
+    try {
+      await client.value.session.delete({
+        path: { id: sessionIdParam }
+      })
+      // If we deleted the current session, clear it
+      if (sessionId.value === sessionIdParam) {
+        sessionId.value = null
+      }
+      return true
+    } catch (err) {
+      error.value = err.message
+      console.error('[useOpencode] Delete session error:', err)
+      return false
+    }
+  }
+
   return {
     client,
     sessionId: computed(() => sessionId.value),
@@ -423,6 +489,10 @@ export function useOpencode() {
     getConfig,
     setModel,
     ensureDefaultModel,
-    clearLoading
+    clearLoading,
+    listSessions,
+    getSession,
+    switchSession,
+    deleteSession
   }
 }

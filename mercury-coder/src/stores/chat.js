@@ -94,9 +94,15 @@ export const useChatStore = defineStore('chat', () => {
   console.log('[ChatStore] Subscribing to global events')
   events.subscribe() // Global subscription (no session filter)
   
-  // Also subscribe to session-specific events when session is created
-  watch(() => opencode.sessionId.value, (newSessionId) => {
-    if (newSessionId) {
+  // Also subscribe to session-specific events when session is created or changed
+  watch(() => opencode.sessionId.value, (newSessionId, oldSessionId) => {
+    if (newSessionId && newSessionId !== oldSessionId) {
+      console.log('[ChatStore] Session changed, clearing messages and subscribing to new session:', newSessionId)
+      // Clear messages when switching sessions
+      messageMap.value.clear()
+      // Subscribe to session-specific events (this will filter events by session)
+      events.subscribe(newSessionId)
+    } else if (newSessionId) {
       console.log('[ChatStore] Session created, subscribing to session-specific events:', newSessionId)
       // Subscribe to session-specific events (this will filter events by session)
       events.subscribe(newSessionId)
