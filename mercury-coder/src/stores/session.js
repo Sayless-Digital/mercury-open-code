@@ -7,13 +7,62 @@ export const useSessionStore = defineStore('session', () => {
   const opencode = useOpencode()
   const projectStore = useProjectStore()
   
-  // List of all sessions
+  // Simple: just store sessions locally
   const sessions = ref([])
   const activeSessionId = ref(null)
-  // List of session IDs that are currently opened in tabs
   const openedSessions = ref([])
   const loading = ref(false)
   const error = ref(null)
+
+  /**
+   * Get storage key for current project
+   */
+  function getStorageKey() {
+    const projectPath = projectStore.currentProject?.path
+    if (!projectPath) return null
+    // Create a safe key from project path
+    return `mercury-session-state:${projectPath}`
+  }
+
+  /**
+   * Save session state to localStorage
+   */
+  function saveSessionState() {
+    const key = getStorageKey()
+    if (!key) return
+    
+    try {
+      const state = {
+        activeSessionId: activeSessionId.value,
+        openedSessions: openedSessions.value,
+        timestamp: Date.now()
+      }
+      localStorage.setItem(key, JSON.stringify(state))
+      console.log('[SessionStore] Saved session state for project:', projectStore.currentProject?.path)
+    } catch (err) {
+      console.warn('[SessionStore] Failed to save session state:', err)
+    }
+  }
+
+  /**
+   * Load session state from localStorage
+   */
+  function loadSessionState() {
+    const key = getStorageKey()
+    if (!key) return null
+    
+    try {
+      const stored = localStorage.getItem(key)
+      if (!stored) return null
+      
+      const state = JSON.parse(stored)
+      console.log('[SessionStore] Loaded session state for project:', projectStore.currentProject?.path, state)
+      return state
+    } catch (err) {
+      console.warn('[SessionStore] Failed to load session state:', err)
+      return null
+    }
+  }
 
   // Computed: active session
   const activeSession = computed(() => {
@@ -44,16 +93,47 @@ export const useSessionStore = defineStore('session', () => {
   })
 
   /**
-   * Load all sessions for the current project
+   * Load all sessions for the current project - simple approach
    */
   async function loadSessions() {
     try {
       loading.value = true
       error.value = null
       
-      const sessionList = await opencode.listSessions()
-      sessions.value = sessionList || []
+      // Simple: just fetch sessions from opencode
+      const result = await opencode.client.value.session.list()
+      sessions.value = result.data || []
       
+      // Try to restore persisted state
+      const persistedState = loadSessionState()
+      
+      if (persistedState && persistedState.activeSessionId && persistedState.openedSessions) {
+        // Verify persisted sessions still exist
+        const validOpenedSessions = persistedState.openedSessions.filter(id => 
+          sessions.value.some(s => s.id === id)
+        )
+        const validActiveSession = sessions.value.some(s => s.id === persistedState.activeSessionId)
+        
+        if (validOpenedSessions.length > 0) {
+          // Restore opened sessions
+          openedSessions.value = validOpenedSessions
+          console.log('[SessionStore] Restored', validOpenedSessions.length, 'opened sessions')
+          
+          // Restore active session if it's still valid
+          if (validActiveSession) {
+            await switchSession(persistedState.activeSessionId)
+            console.log('[SessionStore] Restored active session:', persistedState.activeSessionId)
+            return sessions.value
+          } else if (validOpenedSessions.length > 0) {
+            // Active session is gone, but we have opened sessions - use first one
+            await switchSession(validOpenedSessions[0])
+            console.log('[SessionStore] Active session no longer exists, switched to first opened session')
+            return sessions.value
+          }
+        }
+      }
+      
+      // No persisted state or invalid persisted state - use default behavior
       // If no active session is set but we have sessions, use the most recent one
       if (!activeSessionId.value && sessions.value.length > 0) {
         const mostRecent = sortedSessions.value[0]
@@ -63,9 +143,12 @@ export const useSessionStore = defineStore('session', () => {
         }
         await switchSession(mostRecent.id)
       } else if (!activeSessionId.value && sessions.value.length === 0) {
-        // No sessions exist, create a new one
-        await createNewSession()
+        // No sessions exist - don't create automatically, let user decide
+        console.log('[SessionStore] No sessions exist and no persisted state - waiting for user to create session')
       }
+      
+      // Save state after loading
+      saveSessionState()
       
       return sessions.value
     } catch (err) {
@@ -93,8 +176,15 @@ export const useSessionStore = defineStore('session', () => {
       
       const newSession = await opencode.createSession(title)
       
-      // Add to sessions list
-      sessions.value.push(newSession)
+      // Add the newly created session to sessions immediately
+      const existingIndex = sessions.value.findIndex(s => s.id === newSession.id)
+      if (existingIndex === -1) {
+        sessions.value.push(newSession)
+        console.log('[SessionStore] Added new session:', newSession.id)
+      } else {
+        // Update if it already exists (shouldn't happen for new sessions, but just in case)
+        sessions.value[existingIndex] = newSession
+      }
       
       // Add to opened sessions
       if (!openedSessions.value.includes(newSession.id)) {
@@ -103,6 +193,9 @@ export const useSessionStore = defineStore('session', () => {
       
       // Switch to the new session
       await switchSession(newSession.id)
+      
+      // Save state after creating
+      saveSessionState()
       
       return newSession
     } catch (err) {
@@ -130,21 +223,20 @@ export const useSessionStore = defineStore('session', () => {
       
       console.log('[SessionStore] Switching to session:', sessionId)
       
-      // Switch in opencode composable FIRST (this updates the sessionId in useOpencode)
-      // This ensures the sessionId is set before the watch fires
+      // Simple: just switch the session ID in opencode
+      // This will trigger events to repopulate messageMap
       await opencode.switchSession(sessionId)
       
-      // Wait a bit to ensure sessionId is updated in useOpencode
-      await new Promise(resolve => setTimeout(resolve, 100))
-      
-      // Now update active session (this triggers the watch in ChatPanel)
-      // By this time, opencode.sessionId.value should be set correctly
+      // Update active session
       activeSessionId.value = sessionId
       
       // Add to opened sessions if not already there
       if (!openedSessions.value.includes(sessionId)) {
         openedSessions.value.push(sessionId)
       }
+      
+      // Save state after switching
+      saveSessionState()
       
       console.log('[SessionStore] Session switched successfully to:', sessionId)
       
@@ -170,7 +262,16 @@ export const useSessionStore = defineStore('session', () => {
       
       if (success) {
         // Remove from sessions list
-        sessions.value = sessions.value.filter(s => s.id !== sessionId)
+        const index = sessions.value.findIndex(s => s.id === sessionId)
+        if (index !== -1) {
+          sessions.value.splice(index, 1)
+        }
+        
+        // Remove from opened sessions
+        const openedIndex = openedSessions.value.indexOf(sessionId)
+        if (openedIndex !== -1) {
+          openedSessions.value.splice(openedIndex, 1)
+        }
         
         // If we deleted the active session, switch to another or create new
         if (activeSessionId.value === sessionId) {
@@ -206,10 +307,10 @@ export const useSessionStore = defineStore('session', () => {
       })
       
       if (result.data) {
-        // Update in local list
+        // Update in sessions list
         const index = sessions.value.findIndex(s => s.id === sessionId)
         if (index !== -1) {
-          sessions.value[index] = { ...sessions.value[index], ...result.data }
+          sessions.value[index] = result.data
         }
       }
       
@@ -250,6 +351,9 @@ export const useSessionStore = defineStore('session', () => {
           activeSessionId.value = null
         }
       }
+      
+      // Save state after closing
+      saveSessionState()
     }
   }
 
@@ -273,10 +377,10 @@ export const useSessionStore = defineStore('session', () => {
         }
       }
       
-      // Clear local state
-      sessions.value = []
+      // Clear UI state
       activeSessionId.value = null
       openedSessions.value = []
+      sessions.value = []
       
       // Create a new session
       await createNewSession()
@@ -297,18 +401,28 @@ export const useSessionStore = defineStore('session', () => {
    */
   watch(
     () => projectStore.currentProject?.path,
-    async (newPath) => {
+    async (newPath, oldPath) => {
+      // Save state for old project before switching
+      if (oldPath) {
+        saveSessionState()
+      }
+      
       if (newPath) {
+        // Clear state before loading new project
+        activeSessionId.value = null
+        openedSessions.value = []
         await loadSessions()
       } else {
-        sessions.value = []
         activeSessionId.value = null
+        sessions.value = []
+        openedSessions.value = []
       }
     },
     { immediate: true }
   )
 
   return {
+    // Sessions
     sessions: computed(() => sessions.value),
     sortedSessions,
     openedSessions: computed(() => openedSessions.value),

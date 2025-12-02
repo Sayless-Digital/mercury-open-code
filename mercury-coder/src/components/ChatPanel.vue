@@ -1,4 +1,3 @@
-mercury
 <template>
   <div class="chat-panel">
     <!-- Header -->
@@ -51,7 +50,7 @@ mercury
     <div class="chat-messages" ref="messagesContainer">
       <!-- Debug info (remove in production) -->
       <div v-if="false" style="padding: 10px; background: #f0f0f0; font-size: 12px; margin: 10px;">
-        <div>Total messages in map: {{ chatStore.messageMap.size }}</div>
+        <div>Total messages in map: {{ chatStore.messageMap?.size || 0 }}</div>
         <div>Total turns: {{ turns.length }}</div>
         <div>Total legacy messages: {{ messages.length }}</div>
         <div v-if="turns.length > 0">
@@ -1334,71 +1333,6 @@ const scrollToBottom = () => {
   });
 };
 
-// Watch for session changes and reload messages (mimics OpenCode's createEffect pattern)
-// OpenCode uses: createEffect(() => { if (!params.id) return; sync.session.sync(params.id) })
-watch(
-  () => sessionStore.activeSessionId,
-  async (newSessionId, oldSessionId) => {
-    if (!newSessionId) return // Similar to OpenCode's early return
-    
-    if (newSessionId !== oldSessionId) {
-      console.log('[ChatPanel] Session changed from', oldSessionId, 'to', newSessionId)
-      
-      // Check if chatStore and required methods are available
-      if (!chatStore || !chatStore.opencode || typeof chatStore.loadMessages !== 'function') {
-        console.warn('[ChatPanel] ChatStore not ready, skipping message load')
-        return
-      }
-      
-      // Note: We don't need to wait for opencode.sessionId to be updated
-      // because loadMessages accepts a sessionId parameter and will use that directly
-      // The sessionId in opencode is mainly for sending new messages, not for loading old ones
-      
-      // Mimic OpenCode's sync.session.sync(sessionID) pattern
-      // Load messages for the specific session ID (like OpenCode does)
-      console.log('[ChatPanel] Syncing messages for session:', newSessionId)
-      try {
-        // Pass the sessionId directly to loadMessages (like OpenCode's sync function)
-        await chatStore.loadMessages(newSessionId)
-        
-        // Verify messages were loaded
-        const messageMap = chatStore.messageMap
-        if (messageMap) {
-          const loadedMessages = Array.from(messageMap.values())
-            .filter(msg => msg.info?.sessionID === newSessionId)
-          console.log('[ChatPanel] Synced', loadedMessages.length, 'messages for session', newSessionId)
-          console.log('[ChatPanel] Total messages in map:', messageMap.size)
-          if (chatStore.turns && chatStore.turns.value) {
-            console.log('[ChatPanel] Turns computed:', chatStore.turns.value.length)
-          }
-        } else {
-          console.warn('[ChatPanel] messageMap not available')
-        }
-      } catch (err) {
-        console.error('[ChatPanel] Error syncing messages:', err)
-      }
-      
-      // Scroll to bottom after messages load
-      await nextTick()
-      scrollToBottom()
-    }
-  },
-  { immediate: true } // Run immediately like OpenCode's createEffect
-)
-
-// Load messages on initial mount if there's an active session
-onMounted(async () => {
-  if (sessionStore.activeSessionId && chatStore?.loadMessages) {
-    await nextTick()
-    try {
-      await chatStore.loadMessages()
-      await nextTick()
-      scrollToBottom()
-    } catch (err) {
-      console.error('[ChatPanel] Error loading initial messages:', err)
-    }
-  }
-})
 
 // Watch for new turns or updates to scroll to bottom
 watch(() => turns.value.length, () => {
