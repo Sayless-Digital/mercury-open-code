@@ -314,7 +314,7 @@ mercury
             :disabled="loading"
             title="Stop recording"
           >
-            <Square :size="14" fill="currentColor" />
+            <Square :size="10" fill="currentColor" />
           </button>
           <button
             v-if="isRecording && inputText.trim()"
@@ -372,7 +372,8 @@ import { ref, computed, nextTick, watch, onBeforeUnmount } from 'vue';
 import { marked } from 'marked';
 import {
   Mic, Square, Send, Loader2, Eraser, Brain, RefreshCw, ChevronDown, FileText, CheckSquare,
-  Search, FileEdit, FilePlus, FolderOpen, Globe, Terminal, ListTodo, ArrowUp, ChevronUp
+  Search, FileEdit, FilePlus, FolderOpen, Globe, Terminal, ListTodo, ArrowUp, ChevronUp,
+  Hammer, ClipboardList, Building, Wrench
 } from 'lucide-vue-next';
 import { useChatStore } from '@/stores/chat';
 import { useProjectStore } from '@/stores/project';
@@ -396,12 +397,24 @@ const workflowState = computed(() => chatStore.workflowState);
 
 // Agent selection - initialize with default agent from settings
 const selectedAgent = ref(settingsStore.defaultAgent);
+
+const getAgentIcon = (agentId) => {
+  const icons = {
+    build: Hammer,
+    explore: Search,
+    plan: ClipboardList,
+    architect: Building,
+    fix: Wrench
+  };
+  return icons[agentId] || Hammer;
+};
+
 const agentOptions = [
-  { id: 'build', name: '🔨 Build' },
-  { id: 'explore', name: '🔍 Explore' },
-  { id: 'plan', name: '📋 Plan' },
-  { id: 'architect', name: '🏗️ Architect' },
-  { id: 'fix', name: '🔧 Fix' }
+  { id: 'build', name: 'Build', icon: Hammer },
+  { id: 'explore', name: 'Explore', icon: Search },
+  { id: 'plan', name: 'Plan', icon: ClipboardList },
+  { id: 'architect', name: 'Architect', icon: Building },
+  { id: 'fix', name: 'Fix', icon: Wrench }
 ];
 
 // Watch for changes to default agent in settings
@@ -2560,7 +2573,14 @@ onBeforeUnmount(() => {
 
 .agent-selector-wrapper :deep(.custom-dropdown) {
   width: auto;
-  min-width: 100px;
+  min-width: auto;
+}
+
+.agent-selector-wrapper :deep(.dropdown-menu) {
+  width: max-content;
+  min-width: max-content;
+  left: 0;
+  right: auto;
 }
 
 .agent-selector-wrapper :deep(.custom-dropdown) {
@@ -2568,14 +2588,17 @@ onBeforeUnmount(() => {
 }
 
 .agent-selector-wrapper :deep(.dropdown-trigger) {
-  padding: var(--space-1) var(--space-2);
+  padding: 0 var(--space-2);
   font-size: 11px;
   height: 24px;
   min-height: 24px;
+  width: auto;
+  min-width: auto;
   background: var(--muted);
   border: none;
   border-radius: var(--radius-full);
   color: var(--muted-foreground);
+  white-space: nowrap;
 }
 
 .agent-selector-wrapper :deep(.dropdown-trigger:hover) {
@@ -2635,15 +2658,15 @@ onBeforeUnmount(() => {
 }
 
 .stop-button {
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
-  min-height: 24px;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
   padding: 0;
-  background: none;
+  background: var(--primary);
   border: none;
-  border-radius: var(--radius-sm);
-  color: var(--destructive);
+  border-radius: var(--radius-full);
+  color: var(--primary-foreground);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -2653,7 +2676,8 @@ onBeforeUnmount(() => {
 }
 
 .stop-button:hover:not(:disabled) {
-  color: var(--destructive);
+  background: var(--primary-hover);
+  color: var(--primary-foreground);
 }
 
 .stop-button:disabled {

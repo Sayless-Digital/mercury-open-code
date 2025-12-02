@@ -235,7 +235,9 @@
                 :class="{ active: defaultAgent === agent.id }"
                 @click="setDefaultAgent(agent.id)"
               >
-                <div class="agent-icon">{{ agent.icon }}</div>
+                <div class="agent-icon">
+                  <component :is="agent.icon" :size="20" />
+                </div>
                 <div class="agent-content">
                   <h3>{{ agent.name }}</h3>
                   <p>{{ agent.description }}</p>
@@ -259,7 +261,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { Cloud, Mic, Settings as SettingsIcon, ArrowLeft, Cpu, Sparkles, Box, Wrench, Download, Loader2 } from 'lucide-vue-next'
+import { Cloud, Mic, Settings as SettingsIcon, ArrowLeft, Cpu, Sparkles, Box, Wrench, Download, Loader2, Hammer, Search, ClipboardList, Building } from 'lucide-vue-next'
 import { useProjectStore } from '@/stores/project'
 import { useSettingsStore } from '@/stores/settings'
 import { useModelsStore } from '@/stores/models'
@@ -348,35 +350,35 @@ const agents = ref([
   {
     id: 'build',
     name: 'Build',
-    icon: '🔨',
+    icon: Hammer,
     description: 'General-purpose coding with full tool access',
     tools: ['read', 'write', 'edit', 'bash']
   },
   {
     id: 'explore',
     name: 'Explore',
-    icon: '🔍',
+    icon: Search,
     description: 'Fast read-only agent for understanding code',
     tools: ['read', 'search', 'glob', 'grep']
   },
   {
     id: 'plan',
     name: 'Plan',
-    icon: '📋',
+    icon: ClipboardList,
     description: 'Creates execution plans',
     tools: ['read', 'search']
   },
   {
     id: 'architect',
     name: 'Architect',
-    icon: '🏗️',
+    icon: Building,
     description: 'System design and architecture',
     tools: ['read', 'search']
   },
   {
     id: 'fix',
     name: 'Fix',
-    icon: '🔧',
+    icon: Wrench,
     description: 'Bug fixing specialist',
     tools: ['read', 'write', 'edit', 'bash']
   }

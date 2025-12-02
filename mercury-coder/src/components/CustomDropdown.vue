@@ -6,7 +6,10 @@
       @click="toggleDropdown"
       :class="{ 'has-value': selectedLabel }"
     >
-      <span class="dropdown-value">{{ selectedLabel || placeholder }}</span>
+      <span class="dropdown-value">
+        <component v-if="selectedOption && selectedOption.icon" :is="selectedOption.icon" :size="12" class="dropdown-icon" />
+        {{ selectedLabel || placeholder }}
+      </span>
       <svg 
         class="dropdown-arrow" 
         width="12" 
@@ -67,7 +70,10 @@
               }"
               @click="selectOption(option)"
             >
-              <span class="option-label">{{ getOptionLabel(option) }}</span>
+              <span class="option-label">
+                <component v-if="option.icon" :is="option.icon" :size="14" class="option-icon" />
+                {{ getOptionLabel(option) }}
+              </span>
               <span v-if="isSelected(option)" class="option-checkmark">✓</span>
             </div>
           </template>
@@ -465,6 +471,26 @@ watch(() => props.modelValue, () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.option-icon {
+  flex-shrink: 0;
+}
+
+.dropdown-icon {
+  flex-shrink: 0;
+  margin-right: 2px;
+  margin-top: -1px;
+}
+
+.dropdown-value {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-top: 1px;
 }
 
 .option-checkmark {

@@ -7,7 +7,6 @@
       </div>
       <button class="clear-btn" @click="clear" title="Clear">
         <Eraser :size="14" />
-        Clear
       </button>
     </div>
     <div 
@@ -277,9 +276,12 @@ const handleResize = () => {
 
 const clear = () => {
   if (terminal) {
-    // Use ANSI escape sequences to properly clear the terminal:
+    // Use xterm.js's built-in clear method which properly clears the buffer
+    terminal.clear();
+    
+    // Also use ANSI escape sequences to ensure everything is cleared:
     // \x1b[2J - Clear entire screen (viewport)
-    // \x1b[3J - Clear scrollback buffer (this is the key missing piece!)
+    // \x1b[3J - Clear scrollback buffer
     // \x1b[H  - Move cursor to home position (top-left)
     terminal.write('\x1b[2J\x1b[3J\x1b[H');
     
@@ -288,6 +290,9 @@ const clear = () => {
     if (ptyId && window.electronAPI && window.electronAPI.terminalWrite) {
       window.electronAPI.terminalWrite(ptyId, '\x0c'); // Ctrl+L
     }
+    
+    // Force a refresh to ensure the display is updated
+    terminal.refresh(0, terminal.rows - 1);
     
     // Focus the terminal after clearing
     terminal.focus();
@@ -393,15 +398,18 @@ onBeforeUnmount(() => {
   background: var(--muted);
   border: none;
   color: var(--foreground);
-  padding: var(--space-3) var(--space-6);
+  padding: var(--space-2);
   border-radius: var(--radius-md);
   cursor: pointer;
   font-size: 12px;
   transition: all 0.2s;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  font-family: inherit;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
 }
 
 .clear-btn:hover {
