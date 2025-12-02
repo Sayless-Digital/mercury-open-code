@@ -128,10 +128,17 @@ export const useSessionStore = defineStore('session', () => {
         throw new Error(`Session ${sessionId} not found`)
       }
       
-      // Switch in opencode composable
+      console.log('[SessionStore] Switching to session:', sessionId)
+      
+      // Switch in opencode composable FIRST (this updates the sessionId in useOpencode)
+      // This ensures the sessionId is set before the watch fires
       await opencode.switchSession(sessionId)
       
-      // Update active session
+      // Wait a bit to ensure sessionId is updated in useOpencode
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      // Now update active session (this triggers the watch in ChatPanel)
+      // By this time, opencode.sessionId.value should be set correctly
       activeSessionId.value = sessionId
       
       // Add to opened sessions if not already there
@@ -139,8 +146,7 @@ export const useSessionStore = defineStore('session', () => {
         openedSessions.value.push(sessionId)
       }
       
-      // Load messages for the new session
-      // This will be handled by ChatPanel watching the sessionId
+      console.log('[SessionStore] Session switched successfully to:', sessionId)
       
       return true
     } catch (err) {
@@ -248,6 +254,45 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   /**
+   * Clear all sessions (delete all sessions from the backend)
+   */
+  async function clearAllSessions() {
+    try {
+      loading.value = true
+      error.value = null
+      
+      console.log('[SessionStore] Clearing all sessions...')
+      
+      // Delete all sessions one by one
+      const sessionsToDelete = [...sessions.value]
+      for (const session of sessionsToDelete) {
+        try {
+          await opencode.deleteSession(session.id)
+        } catch (err) {
+          console.warn('[SessionStore] Failed to delete session', session.id, ':', err)
+        }
+      }
+      
+      // Clear local state
+      sessions.value = []
+      activeSessionId.value = null
+      openedSessions.value = []
+      
+      // Create a new session
+      await createNewSession()
+      
+      console.log('[SessionStore] All sessions cleared')
+      return true
+    } catch (err) {
+      error.value = err.message
+      console.error('[SessionStore] Clear all sessions error:', err)
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
    * Initialize: Load sessions when project changes
    */
   watch(
@@ -278,7 +323,8 @@ export const useSessionStore = defineStore('session', () => {
     deleteSession,
     updateSessionTitle,
     openSession,
-    closeSession
+    closeSession,
+    clearAllSessions
   }
 })
 

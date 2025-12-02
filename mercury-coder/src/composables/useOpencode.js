@@ -255,21 +255,39 @@ export function useOpencode() {
   }
 
   /**
-   * Get messages from the current session
+   * Get messages from a session (can specify sessionId or use current)
    */
-  async function getMessages(limit = 100) {
-    if (!sessionId.value) return []
+  async function getMessages(limit = 100, sessionIdParam = null) {
+    const targetSessionId = sessionIdParam || sessionId.value
+    if (!targetSessionId) {
+      console.warn('[useOpencode] No sessionId provided for getMessages')
+      return []
+    }
 
     try {
+      console.log('[useOpencode] Fetching messages for session:', targetSessionId)
       const result = await client.value.session.messages({
-        path: { id: sessionId.value },
+        path: { id: targetSessionId },
         query: { limit }
       })
       
-      return result.data || []
+      const messages = result.data || []
+      console.log('[useOpencode] Fetched', messages.length, 'messages for session', targetSessionId)
+      
+      // Log first message if available
+      if (messages.length > 0 && messages[0].info) {
+        console.log('[useOpencode] First message sessionID:', messages[0].info.sessionID, 'matches target:', messages[0].info.sessionID === targetSessionId)
+      }
+      
+      return messages
     } catch (err) {
       error.value = err.message
       console.error('[useOpencode] Get messages error:', err)
+      console.error('[useOpencode] Error details:', {
+        sessionId: targetSessionId,
+        error: err.message,
+        stack: err.stack
+      })
       return []
     }
   }
@@ -444,9 +462,10 @@ export function useOpencode() {
    */
   async function switchSession(sessionIdParam) {
     try {
+      console.log('[useOpencode] Switching sessionId from', sessionId.value, 'to', sessionIdParam)
       sessionId.value = sessionIdParam
-      // Load messages for the new session
-      await getMessages()
+      // Don't load messages here - let the ChatPanel watch handle it
+      // This prevents conflicts and ensures messages are loaded for the correct session
       return true
     } catch (err) {
       error.value = err.message

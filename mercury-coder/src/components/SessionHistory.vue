@@ -2,14 +2,25 @@
   <div class="session-history">
     <div class="session-history-header">
       <h3 class="session-history-title">Session History</h3>
-      <button 
-        class="session-history-new"
-        @click="handleNewSession"
-        title="New Session"
-      >
-        <Plus :size="16" />
-        <span>New Session</span>
-      </button>
+      <div class="session-history-actions">
+        <button 
+          class="session-history-clear"
+          @click="handleClearAll"
+          title="Clear All Sessions"
+          :disabled="sortedSessions.length === 0"
+        >
+          <Trash2 :size="14" />
+          <span>Clear All</span>
+        </button>
+        <button 
+          class="session-history-new"
+          @click="handleNewSession"
+          title="New Session"
+        >
+          <Plus :size="16" />
+          <span>New Session</span>
+        </button>
+      </div>
     </div>
     
     <div class="session-history-list">
@@ -99,6 +110,13 @@ async function handleDelete(sessionId) {
   }
 }
 
+async function handleClearAll() {
+  const count = sortedSessions.value.length
+  if (confirm(`Are you sure you want to delete all ${count} sessions? This action cannot be undone.`)) {
+    await sessionStore.clearAllSessions()
+  }
+}
+
 // Load sessions on mount
 onMounted(async () => {
   await sessionStore.loadSessions()
@@ -119,6 +137,37 @@ onMounted(async () => {
   justify-content: space-between;
   padding: var(--space-4);
   border-bottom: 1px solid var(--border);
+}
+
+.session-history-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.session-history-clear {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.session-history-clear:hover:not(:disabled) {
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+  border-color: var(--destructive);
+}
+
+.session-history-clear:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .session-history-title {

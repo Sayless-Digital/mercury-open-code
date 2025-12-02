@@ -1,6 +1,13 @@
 <template>
   <div class="session-tabs">
     <div class="session-tabs-container">
+      <button 
+        class="session-tab-new"
+        @click="handleNewSession"
+        title="New Session"
+      >
+        <Plus :size="14" />
+      </button>
       <div 
         v-for="session in openedSessions" 
         :key="session.id"
@@ -18,13 +25,6 @@
           <X :size="12" />
         </button>
       </div>
-      <button 
-        class="session-tab-new"
-        @click="handleNewSession"
-        title="New Session"
-      >
-        <Plus :size="14" />
-      </button>
     </div>
   </div>
 </template>
@@ -80,19 +80,23 @@ onMounted(async () => {
 
 <style scoped>
 .session-tabs {
-  border-bottom: 1px solid var(--border);
-  background: var(--background);
+  border-bottom: none;
+  background: transparent;
+  height: 100%;
 }
 
 .session-tabs-container {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 0 var(--space-2);
+  padding: 0;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
   scrollbar-color: var(--muted) transparent;
+  height: 100%;
+  flex: 1;
+  min-width: 0;
 }
 
 .session-tabs-container::-webkit-scrollbar {
@@ -113,8 +117,8 @@ onMounted(async () => {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
-  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-full);
+  border-bottom: none;
   background: transparent;
   color: var(--muted-foreground);
   font-size: 13px;
@@ -124,17 +128,18 @@ onMounted(async () => {
   min-width: 0;
   flex-shrink: 0;
   position: relative;
+  height: 24px;
 }
 
 .session-tab:hover {
-  background: var(--muted);
+  background: color-mix(in srgb, var(--muted) 80%, var(--accent) 20%);
   color: var(--foreground);
 }
 
 .session-tab.active {
-  background: var(--background);
-  color: var(--foreground);
-  border-bottom-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 500;
 }
 
 .session-tab-title {
@@ -153,7 +158,7 @@ onMounted(async () => {
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--muted-foreground);
+  color: inherit;
   cursor: pointer;
   border-radius: var(--radius-sm);
   opacity: 1;
@@ -170,17 +175,17 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
   padding: 0;
   border: none;
-  background: transparent;
+  background: var(--accent);
   color: var(--muted-foreground);
   cursor: pointer;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-full);
   transition: all 0.2s ease;
   flex-shrink: 0;
-  margin-left: var(--space-1);
 }
 
 .session-tab-new:hover {
