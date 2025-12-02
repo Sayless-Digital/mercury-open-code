@@ -843,6 +843,7 @@ const getFileIcon = (filePath) => {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  background: transparent;
 }
 
 .code-editor {
@@ -853,14 +854,14 @@ const getFileIcon = (filePath) => {
   margin: 0;
 }
 
-/* Light mode: slightly grey background for editor */
+/* Light mode: use sidebar background for editor */
 :not(.dark) .code-editor {
-  background: var(--card);
+  background: var(--sidebar);
 }
 
-/* Dark mode: use original card color */
+/* Dark mode: use sidebar background for editor */
 .dark .code-editor {
-  background: var(--card);
+  background: var(--sidebar);
 }
 
 .empty-editor {
@@ -874,14 +875,14 @@ const getFileIcon = (filePath) => {
   flex-direction: column;
 }
 
-/* Light mode: slightly grey background for empty editor */
+/* Light mode: use sidebar background for empty editor */
 :not(.dark) .empty-editor {
-  background: var(--card);
+  background: var(--sidebar);
 }
 
-/* Dark mode: use original card color */
+/* Dark mode: use sidebar background for empty editor */
 .dark .empty-editor {
-  background: var(--card);
+  background: var(--sidebar);
 }
 
 .empty-editor-content {
@@ -923,14 +924,14 @@ const getFileIcon = (filePath) => {
   min-height: 0;
 }
 
-/* Light mode: slightly grey background for terminal */
+/* Light mode: use sidebar background for terminal */
 :not(.dark) .terminal {
-  background: var(--card);
+  background: var(--sidebar);
 }
 
-/* Dark mode: use original card color */
+/* Dark mode: use sidebar background for terminal */
 .dark .terminal {
-  background: var(--card);
+  background: var(--sidebar);
 }
 
 .assistant-column {
@@ -940,6 +941,7 @@ const getFileIcon = (filePath) => {
   flex-direction: column;
   margin: 0;
   min-height: 0;
+  background: transparent;
 }
 
 .resize-handle {

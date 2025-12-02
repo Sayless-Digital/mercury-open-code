@@ -56,7 +56,7 @@ const getTerminalTheme = () => {
   // Use design system colors for terminal text
   const foregroundColor = styles.getPropertyValue('--foreground').trim() || (isDark ? '#e0e0e0' : '#404040');
   const mutedColor = styles.getPropertyValue('--muted-foreground').trim() || (isDark ? '#b4b4b4' : '#646464');
-  const bgColor = styles.getPropertyValue('--card').trim() || (isDark ? '#191919' : '#fcfcfc');
+  const bgColor = styles.getPropertyValue('--sidebar').trim() || (isDark ? '#191919' : '#fcfcfc');
   
   // Use theme-appropriate cursor colors that match the app's warm color scheme
   // Dark mode: warm cream/peach (#ffe0c2) - the primary color
@@ -345,7 +345,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--card);
+  background: var(--sidebar);
   border-radius: var(--radius-xl);
   overflow: hidden;
   box-shadow: var(--shadow-sm);
@@ -417,7 +417,7 @@ onBeforeUnmount(() => {
   flex: 1;
   padding: var(--space-6);
   overflow: hidden;
-  background: var(--card);
+  background: var(--sidebar);
   -ms-overflow-style: none;
   scrollbar-width: none;
   border-radius: 0 0 var(--radius-xl) var(--radius-xl);
@@ -438,12 +438,12 @@ onBeforeUnmount(() => {
 
 /* Dark mode: set background only on main container elements, NOT on cursor canvas */
 .dark :deep(.xterm) {
-  background: var(--card) !important;
+  background: var(--sidebar) !important;
 }
 
 .dark :deep(.xterm-viewport),
 .dark :deep(.xterm-screen) {
-  background-color: var(--card) !important;
+  background-color: var(--sidebar) !important;
 }
 
 /* Do NOT set background on canvas elements - this interferes with cursor rendering */
@@ -538,46 +538,46 @@ onBeforeUnmount(() => {
   /* Background set by theme-specific rules below */
 }
 
-/* Light mode: use card background for terminal */
+/* Light mode: use sidebar background for terminal */
 :not(.dark) .terminal {
-  background: var(--card);
+  background: var(--sidebar);
 }
 
 :not(.dark) .terminal-container {
-  background: var(--card);
+  background: var(--sidebar);
 }
 
 :not(.dark) :deep(.xterm-viewport) {
-  background: var(--card) !important;
+  background: var(--sidebar) !important;
 }
 
 :not(.dark) :deep(.xterm .xterm-scroll-area) {
-  background: var(--card) !important;
+  background: var(--sidebar) !important;
 }
 
 :not(.dark) :deep(.xterm-screen) {
-  background: var(--card) !important;
+  background: var(--sidebar) !important;
 }
 
-/* Dark mode: use card background color matching Monaco editor - must come after to override light mode */
+/* Dark mode: use sidebar background color - must come after to override light mode */
 .dark .terminal {
-  background: var(--card) !important;
+  background: var(--sidebar) !important;
 }
 
 .dark .terminal-container {
-  background: var(--card) !important;
+  background: var(--sidebar) !important;
 }
 
 .dark :deep(.xterm-viewport) {
-  background: var(--card) !important;
+  background: var(--sidebar) !important;
 }
 
 .dark :deep(.xterm .xterm-scroll-area) {
-  background: var(--card) !important;
+  background: var(--sidebar) !important;
 }
 
 .dark :deep(.xterm-screen) {
-  background: var(--card) !important;
+  background: var(--sidebar) !important;
 }
 </style>
 

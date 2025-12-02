@@ -23,13 +23,31 @@ const editorContainer = ref(null);
 let editor = null;
 let currentContent = '';
 
+const getEditorBackground = () => {
+  const root = document.documentElement;
+  const styles = getComputedStyle(root);
+  return styles.getPropertyValue('--sidebar').trim() || (root.classList.contains('dark') ? '#191919' : '#fcfcfc');
+};
+
 const initEditor = () => {
   if (!editorContainer.value) return;
+
+  const bgColor = getEditorBackground();
+  
+  // Define custom theme with sidebar background
+  monaco.editor.defineTheme('mercury-coder', {
+    base: isDark.value ? 'vs-dark' : 'vs',
+    inherit: true,
+    rules: [],
+    colors: {
+      'editor.background': bgColor,
+    },
+  });
 
   editor = monaco.editor.create(editorContainer.value, {
     value: '',
     language: 'javascript',
-    theme: isDark.value ? 'vs-dark' : 'vs',
+    theme: 'mercury-coder',
     automaticLayout: true,
     minimap: { enabled: true },
     fontSize: 14,
@@ -133,7 +151,16 @@ watch(() => props.filePath, loadFile, { immediate: true });
 // Watch for theme changes and update editor theme
 watch(isDark, (dark) => {
   if (editor) {
-    monaco.editor.setTheme(dark ? 'vs-dark' : 'vs');
+    const bgColor = getEditorBackground();
+    monaco.editor.defineTheme('mercury-coder', {
+      base: dark ? 'vs-dark' : 'vs',
+      inherit: true,
+      rules: [],
+      colors: {
+        'editor.background': bgColor,
+      },
+    });
+    monaco.editor.setTheme('mercury-coder');
   }
 });
 

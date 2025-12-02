@@ -451,10 +451,7 @@ watch(() => props.modelValue, () => {
 }
 
 .dropdown-option.is-selected {
-  background: var(--primary);
-  color: var(--primary-foreground);
-  padding-top: var(--space-1);
-  padding-bottom: var(--space-1);
+  /* No background highlight - only show checkmark */
 }
 
 .dropdown-option.is-disabled {

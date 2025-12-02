@@ -203,3 +203,5 @@ The connection between `mercury-coder` and `opencode-backend` is **well-implemen
 3. Verify all API endpoints are accessible
 4. Test session creation and message sending
 
+
+

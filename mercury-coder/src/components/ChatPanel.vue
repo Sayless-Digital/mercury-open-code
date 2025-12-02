@@ -12,10 +12,6 @@ mercury
         </div>
         <span class="chat-title">Mercury Coder</span>
       </div>
-      <button class="clear-btn" @click="clearChat" title="Clear">
-        <Eraser :size="14" />
-        Clear
-      </button>
     </div>
     
     <!-- Task Control Panel -->
@@ -273,83 +269,98 @@ mercury
     <!-- Input Section -->
     <div class="chat-input-container">
       <div class="input-wrapper">
-        <button
-          v-if="!autoRecordMode && !isRecording"
-          class="voice-button"
-          @click="toggleRecording"
-          :disabled="loading"
-          title="Start voice recording"
-        >
-          <Mic :size="18" />
-        </button>
         <textarea
           v-model="inputText"
           @keydown="handleKeyDown"
           @input="handleInput"
           @focus="handleInputFocus"
           :disabled="loading"
-          :placeholder="showTranscribingPlaceholder ? '' : 'Type or speak your message...'"
+          :placeholder="showTranscribingPlaceholder ? 'Listening intently' : 'Type or speak your message...'"
           class="chat-input"
           :class="{ 'transcribing-placeholder': showTranscribingPlaceholder }"
           rows="1"
           ref="inputRef"
         ></textarea>
         <div v-if="showTranscribingPlaceholder" class="transcribing-overlay">
-          <span class="transcribing-text shimmer-text">Listening</span>
+          <Loader2 :size="12" class="transcribing-spinner" />
+          <span class="transcribing-text shimmer-text">Listening intently</span>
         </div>
-        <button
-          v-if="isRecording"
-          class="stop-button"
-          @click="stopRecording"
-          :disabled="loading"
-          title="Stop recording"
-        >
-          <Square :size="14" />
-        </button>
-        <button
-          v-if="isRecording && inputText.trim()"
-          class="send-button"
-          @click="sendMessage"
-          :disabled="loading || !inputText.trim()"
-          title="Send message"
-        >
-          <Send :size="14" />
-        </button>
-        <button
-          v-else-if="isTranscribingFinal || isTranscribing.value"
-          class="loading-button"
-          disabled
-          title="Transcribing..."
-        >
-          <Loader2 :size="14" class="spinner" />
-        </button>
-        <template v-else-if="inputText.trim()">
+      </div>
+      <div class="input-actions">
+        <div class="agent-selector-wrapper">
+          <CustomDropdown
+            v-model="selectedAgent"
+            :options="agentOptions"
+            placeholder="Agent"
+            option-label="name"
+            option-value="id"
+            class="agent-dropdown"
+          />
+        </div>
+        <div class="action-buttons">
           <button
-            class="clear-input-button"
-            @click="clearInput"
+            v-if="!autoRecordMode && !isRecording"
+            class="voice-button"
+            @click="toggleRecording"
             :disabled="loading"
-            title="Clear input"
+            title="Start voice recording"
           >
-            <Eraser :size="14" />
+            <Mic :size="18" fill="currentColor" />
           </button>
           <button
+            v-if="isRecording"
+            class="stop-button"
+            @click="stopRecording"
+            :disabled="loading"
+            title="Stop recording"
+          >
+            <Square :size="14" fill="currentColor" />
+          </button>
+          <button
+            v-if="isRecording && inputText.trim()"
             class="send-button"
             @click="sendMessage"
             :disabled="loading || !inputText.trim()"
             title="Send message"
           >
-            <Send :size="14" />
+            <ArrowUp :size="14" fill="currentColor" />
           </button>
-        </template>
-        <button
-          v-else-if="!autoRecordMode"
-          class="voice-button voice-button-inline"
-          @click="startRecordingAtCursor"
-          :disabled="loading"
-          title="Start recording"
-        >
-          <Mic :size="16" />
-        </button>
+          <button
+            v-else-if="isTranscribingFinal || isTranscribing.value"
+            class="loading-button"
+            disabled
+            title="Transcribing..."
+          >
+            <Loader2 :size="14" class="spinner" fill="currentColor" />
+          </button>
+          <template v-else-if="inputText.trim()">
+            <button
+              class="clear-input-button"
+              @click="clearInput"
+              :disabled="loading"
+              title="Clear input"
+            >
+              <Eraser :size="16" />
+            </button>
+            <button
+              class="send-button"
+              @click="sendMessage"
+              :disabled="loading || !inputText.trim()"
+              title="Send message"
+            >
+              <ArrowUp :size="14" fill="currentColor" />
+            </button>
+          </template>
+          <button
+            v-else-if="!autoRecordMode"
+            class="voice-button voice-button-inline"
+            @click="startRecordingAtCursor"
+            :disabled="loading"
+            title="Start recording"
+          >
+            <Mic :size="16" />
+          </button>
+        </div>
       </div>
       <div v-if="error" class="error-message">{{ error }}</div>
     </div>
@@ -361,7 +372,7 @@ import { ref, computed, nextTick, watch, onBeforeUnmount } from 'vue';
 import { marked } from 'marked';
 import {
   Mic, Square, Send, Loader2, Eraser, Brain, RefreshCw, ChevronDown, FileText, CheckSquare,
-  Search, FileEdit, FilePlus, FolderOpen, Globe, Terminal, ListTodo
+  Search, FileEdit, FilePlus, FolderOpen, Globe, Terminal, ListTodo, ArrowUp, ChevronUp
 } from 'lucide-vue-next';
 import { useChatStore } from '@/stores/chat';
 import { useProjectStore } from '@/stores/project';
@@ -369,6 +380,7 @@ import { useSettingsStore } from '@/stores/settings';
 import TaskControlPanel from './TaskControlPanel.vue';
 import WorkflowSummaryCard from './WorkflowSummaryCard.vue';
 import SideBySideDiff from './SideBySideDiff.vue';
+import CustomDropdown from './CustomDropdown.vue';
 
 const chatStore = useChatStore();
 const projectStore = useProjectStore();
@@ -381,6 +393,21 @@ const error = computed(() => chatStore.error);
 const autoRecordMode = computed(() => settingsStore.autoRecordMode);
 const whisperModelId = computed(() => settingsStore.whisperModelId);
 const workflowState = computed(() => chatStore.workflowState);
+
+// Agent selection - initialize with default agent from settings
+const selectedAgent = ref(settingsStore.defaultAgent);
+const agentOptions = [
+  { id: 'build', name: '🔨 Build' },
+  { id: 'explore', name: '🔍 Explore' },
+  { id: 'plan', name: '📋 Plan' },
+  { id: 'architect', name: '🏗️ Architect' },
+  { id: 'fix', name: '🔧 Fix' }
+];
+
+// Watch for changes to default agent in settings
+watch(() => settingsStore.defaultAgent, (newAgent) => {
+  selectedAgent.value = newAgent;
+});
 
 const showAgentStatus = computed(() => {
   if (!loading.value) return false;
@@ -491,20 +518,15 @@ const clearInput = async () => {
   inputText.value = '';
   accumulatedText = '';
   hasReceivedTranscription.value = false;
-  hasManuallyStopped.value = false;
+  hasManuallyStopped.value = true; // Prevent auto-recording after clearing
+  
   nextTick(() => {
     if (inputRef.value) {
-      inputRef.value.style.height = 'auto';
-      inputRef.value.style.height = inputRef.value.scrollHeight + 'px';
+      inputRef.value.style.height = '24px';
+      // Unfocus the input to prevent auto-recording
+      inputRef.value.blur();
     }
   });
-  
-  if (autoRecordMode.value && !isRecording.value && !loading.value && whisperModelId.value) {
-    await nextTick();
-    if (!inputText.value.trim()) {
-      await startRecording();
-    }
-  }
 };
 
 const startRecordingAtCursor = async () => {
@@ -573,7 +595,8 @@ const streamRemainder = (textToStream, startPosition, isFinal = false, onComplet
   
   const streamNext = () => {
     if (streamedLength < textToStream.length) {
-      const chunkSize = isFinal ? 3 : 2;
+      // Smaller chunk size
+      const chunkSize = 5;
       const nextChunk = textToStream.substring(streamedLength, streamedLength + chunkSize);
       streamedLength += nextChunk.length;
       
@@ -581,7 +604,8 @@ const streamRemainder = (textToStream, startPosition, isFinal = false, onComplet
       inputText.value = baseText + textToStream.substring(0, streamedLength);
       resizeTextarea();
       
-      streamingTimeout = setTimeout(streamNext, isFinal ? 20 : 30);
+      // Slightly increased delay
+      streamingTimeout = setTimeout(streamNext, isFinal ? 15 : 20);
     } else {
       streamingTimeout = null;
       if (onComplete) {
@@ -597,14 +621,18 @@ const resizeTextarea = () => {
   nextTick(() => {
     if (inputRef.value) {
       inputRef.value.style.height = 'auto';
-      const newHeight = Math.min(inputRef.value.scrollHeight, 200);
+      // Only expand if content requires more than one line
+      const newHeight = Math.max(24, Math.min(inputRef.value.scrollHeight, 200));
       inputRef.value.style.height = newHeight + 'px';
     }
   });
 };
 
 const handleInputFocus = async () => {
-  if (autoRecordMode.value && !isRecording.value && !loading.value && !hasManuallyStopped.value && !inputText.value.trim()) {
+  // Reset manual stop flag when user focuses the input - they're indicating they want to use it again
+  hasManuallyStopped.value = false;
+  
+  if (autoRecordMode.value && !isRecording.value && !loading.value && !inputText.value.trim()) {
     await nextTick();
     if (whisperModelId.value) {
       await startRecording();
@@ -619,32 +647,37 @@ const sendMessage = async () => {
     await stopRecording(true);
   }
   
+  // Cancel any in-flight transcription
+  isTranscribingInternal = false;
+  isTranscribing.value = false;
+  isTranscribingFinal.value = false;
+  
   const text = inputText.value.trim();
   inputText.value = '';
   accumulatedText = '';
-  isTranscribingFinal.value = false;
   hasReceivedTranscription.value = false;
   hasManuallyStopped.value = false;
   
-  nextTick(() => {
-    if (inputRef.value) {
-      inputRef.value.style.height = 'auto';
-      inputRef.value.style.height = inputRef.value.scrollHeight + 'px';
-    }
-  });
+  resizeTextarea();
   
   const context = {
     projectPath: projectStore.currentProject?.path,
     activeFile: projectStore.activeFile,
+    agent: selectedAgent.value
   };
   
   await chatStore.sendMessageStream(text, context);
   scrollToBottom();
+  
+  // Unfocus the input and prevent auto-recording
+  hasManuallyStopped.value = true;
+  nextTick(() => {
+    if (inputRef.value) {
+      inputRef.value.blur();
+    }
+  });
 };
 
-const clearChat = () => {
-  chatStore.clearMessages();
-};
 
 // Helper functions for turn-based display
 const getUserMessageText = (userMessage) => {
@@ -1299,7 +1332,7 @@ const startRecording = async () => {
       hasManuallyStopped.value = false;
     };
     
-    const CHUNK_DURATION_MS = 3000;
+    const CHUNK_DURATION_MS = 200;
     
     mediaRecorder.start(CHUNK_DURATION_MS);
     isRecording.value = true;
@@ -1316,7 +1349,7 @@ const startRecording = async () => {
         console.log('Processing first chunk. Chunks:', audioChunks.length);
         await processChunk(false);
       }
-    }, 3500);
+    }, 300);
   } catch (error) {
     console.error('Error accessing microphone:', error);
     isRecording.value = false;
@@ -1409,6 +1442,12 @@ const hasSpeech = async (audioBlob) => {
 };
 
 const processChunk = async (isFinal = false) => {
+  // Only process transcription if we're currently recording
+  if (!isRecording.value && !isFinal) {
+    console.log('Ignoring transcription chunk - not currently recording');
+    return;
+  }
+  
   if (audioChunks.length === 0) {
     console.log('No audio chunks to process');
     return;
@@ -1473,6 +1512,12 @@ const processChunk = async (isFinal = false) => {
     
     const data = await response.json();
     console.log('Transcription response:', data);
+    
+    // Check again after fetch completes - recording might have stopped while fetch was in progress
+    if (!isRecording.value && !isFinal) {
+      console.log('Ignoring transcription result - not currently recording');
+      return;
+    }
     
     if (data.success && data.text) {
       const newText = data.text.trim();
@@ -1557,6 +1602,8 @@ onBeforeUnmount(() => {
   background: var(--sidebar);
   border-radius: var(--radius-xl);
   overflow: hidden;
+  padding: 0;
+  margin: 0;
 }
 
 .chat-header {
@@ -1592,25 +1639,6 @@ onBeforeUnmount(() => {
   margin: 0;
 }
 
-.clear-btn {
-  background: var(--muted);
-  border: none;
-  color: var(--foreground);
-  cursor: pointer;
-  padding: var(--space-3) var(--space-6);
-  border-radius: var(--radius-md);
-  font-size: 13px;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  font-family: inherit;
-}
-
-.clear-btn:hover {
-  background: var(--accent);
-  opacity: 0.9;
-}
 
 .chat-messages {
   flex: 1;
@@ -1744,55 +1772,180 @@ onBeforeUnmount(() => {
 
 /* Markdown styling */
 .text-content :deep(h1) {
-  margin: var(--space-8) 0 var(--space-4) 0;
+  margin: var(--space-8) 0 var(--space-5) 0;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.3;
   font-size: 1.5em;
+  padding-bottom: var(--space-3);
+  border-bottom: 2px solid var(--border);
+  color: var(--foreground);
+  background: transparent !important;
 }
 
 .text-content :deep(h1:first-child) {
   margin-top: 0;
 }
 
-.text-content :deep(h2),
-.text-content :deep(h3),
-.text-content :deep(h4),
-.text-content :deep(h5),
-.text-content :deep(h6) {
+/* Ensure H1 content is never grouped */
+.text-content :deep(h1 ~ *) {
+  background: transparent !important;
+}
+
+/* H2 styling (no grouping, just visual styling) */
+.text-content :deep(h2) {
   margin: var(--space-6) 0 var(--space-3) 0;
   font-weight: 600;
   line-height: 1.4;
-}
-
-.text-content :deep(h2) {
   font-size: 1.3em;
+  padding: var(--space-2) var(--space-3);
+  padding-left: var(--space-2);
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius-md);
+  color: var(--foreground) !important;
+  background: color-mix(in srgb, var(--muted) 30%, transparent 70%);
 }
 
+.text-content :deep(h2 strong) {
+  color: var(--foreground) !important;
+}
+
+/* Ensure H2 content is never grouped (only H3 groups) */
+.text-content :deep(h2 ~ *:not(h3):not(h1)) {
+  background: transparent !important;
+}
+
+
+/* H3 styling (no grouping) */
 .text-content :deep(h3) {
+  margin: var(--space-5) 0 var(--space-3) 0;
+  font-weight: 600;
+  line-height: 1.4;
   font-size: 1.1em;
+  padding: var(--space-2) var(--space-3);
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--muted-foreground);
+  border-radius: var(--radius-md);
+  color: var(--foreground) !important;
+  background: color-mix(in srgb, var(--muted) 30%, transparent 70%);
+}
+
+.text-content :deep(h3 strong) {
+  color: var(--foreground) !important;
+}
+
+.text-content :deep(h4) {
+  margin: var(--space-4) 0 var(--space-2) 0;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--foreground) !important;
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--border);
+  opacity: 0.7;
+  background: transparent !important;
+}
+
+/* Ensure H4 content is never grouped (only H3 groups) */
+.text-content :deep(h4 ~ *:not(h3):not(h2):not(h1)) {
+  background: transparent !important;
+}
+
+/* Override H4 margins when under H3 */
+.text-content :deep(h3 ~ h4) {
+  margin: 0 !important;
+  padding-top: var(--space-2);
+  padding-bottom: 0;
+}
+
+.text-content :deep(h4 strong) {
+  color: var(--foreground) !important;
+}
+
+.text-content :deep(h5),
+.text-content :deep(h6) {
+  margin: var(--space-4) 0 var(--space-2) 0;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--foreground) !important;
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--border);
+  opacity: 0.7;
+  background: transparent !important;
+}
+
+/* Ensure H5 and H6 content is never grouped (only H3 groups) */
+.text-content :deep(h5 ~ *:not(h3):not(h2):not(h1):not(h4)),
+.text-content :deep(h6 ~ *:not(h3):not(h2):not(h1):not(h4):not(h5)) {
+  background: transparent !important;
+}
+
+.text-content :deep(h5 strong),
+.text-content :deep(h6 strong) {
+  color: var(--foreground) !important;
 }
 
 .text-content :deep(p) {
   margin: var(--space-3) 0;
+  line-height: 1.6;
+}
+
+/* Consistent spacing after headings */
+.text-content :deep(h1 + *),
+.text-content :deep(h2 + *),
+.text-content :deep(h3 + *),
+.text-content :deep(h4 + *),
+.text-content :deep(h5 + *),
+.text-content :deep(h6 + *) {
+  margin-top: var(--space-3);
 }
 
 .text-content :deep(ul),
 .text-content :deep(ol) {
   margin: var(--space-4) var(--space-6) var(--space-4) var(--space-8);
-  padding-left: var(--space-4);
+  padding-left: var(--space-5);
 }
 
 .text-content :deep(li) {
   margin: var(--space-2) 0;
-  padding-left: 0;
+  padding-left: var(--space-2);
+  position: relative;
+  line-height: 1.6;
 }
 
 .text-content :deep(ul) {
-  list-style-type: disc;
+  list-style-type: none;
+}
+
+.text-content :deep(ul li::before) {
+  content: '•';
+  color: var(--foreground);
+  font-weight: bold;
+  font-size: 1.1em;
+  position: absolute;
+  left: calc(-1 * var(--space-5));
+  line-height: 1.6;
+  opacity: 0.6;
 }
 
 .text-content :deep(ol) {
-  list-style-type: decimal;
+  list-style-type: none;
+  counter-reset: list-counter;
+}
+
+.text-content :deep(ol li) {
+  counter-increment: list-counter;
+  padding-left: var(--space-5);
+}
+
+.text-content :deep(ol li::before) {
+  content: counter(list-counter) '.';
+  color: var(--foreground);
+  font-weight: 600;
+  position: absolute;
+  left: calc(-1 * var(--space-5));
+  line-height: 1.6;
+  min-width: var(--space-4);
+  text-align: right;
+  opacity: 0.6;
 }
 
 .text-content :deep(ul ul),
@@ -1863,6 +2016,7 @@ onBeforeUnmount(() => {
 
 .text-content :deep(strong) {
   font-weight: 600;
+  color: var(--primary);
 }
 
 .text-content :deep(em) {
@@ -2371,8 +2525,10 @@ onBeforeUnmount(() => {
 }
 
 .chat-input-container {
-  padding: var(--space-2);
-  background: var(--muted);
+  padding: var(--space-4);
+  background: var(--background);
+  margin: var(--space-4);
+  border-radius: var(--radius-xl);
 }
 
 .input-wrapper {
@@ -2382,13 +2538,77 @@ onBeforeUnmount(() => {
   position: relative;
 }
 
-.voice-button {
-  padding: var(--space-5);
-  margin-bottom: var(--space-2);
+.input-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: var(--space-2);
+  gap: var(--space-2);
+}
+
+.agent-selector-wrapper {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.action-buttons {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin-left: auto;
+}
+
+.agent-selector-wrapper :deep(.custom-dropdown) {
+  width: auto;
+  min-width: 100px;
+}
+
+.agent-selector-wrapper :deep(.custom-dropdown) {
+  font-size: 11px;
+}
+
+.agent-selector-wrapper :deep(.dropdown-trigger) {
+  padding: var(--space-1) var(--space-2);
+  font-size: 11px;
+  height: 24px;
+  min-height: 24px;
+  background: var(--muted);
+  border: none;
+  border-radius: var(--radius-full);
+  color: var(--muted-foreground);
+}
+
+.agent-selector-wrapper :deep(.dropdown-trigger:hover) {
   background: var(--accent);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
   color: var(--foreground);
+}
+
+.agent-selector-wrapper :deep(.custom-dropdown.is-open .dropdown-trigger) {
+  border: none;
+  outline: none;
+}
+
+.agent-selector-wrapper :deep(.dropdown-value) {
+  font-size: 11px;
+  color: var(--foreground);
+  line-height: 1.2;
+}
+
+.agent-selector-wrapper :deep(.dropdown-arrow) {
+  width: 10px;
+  height: 10px;
+}
+
+.voice-button {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -2398,9 +2618,7 @@ onBeforeUnmount(() => {
 }
 
 .voice-button:hover:not(:disabled) {
-  background: var(--primary);
-  color: white;
-  border-color: var(--primary);
+  color: var(--foreground);
 }
 
 .voice-button:disabled {
@@ -2409,26 +2627,23 @@ onBeforeUnmount(() => {
 }
 
 .voice-button-inline {
-  width: var(--button-md);
-  height: var(--button-md);
-  min-width: var(--button-md);
-  min-height: var(--button-md);
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
   padding: 0;
-  margin-bottom: var(--space-2);
-  border-radius: var(--radius-lg);
 }
 
 .stop-button {
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  min-height: 32px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
   padding: 0;
-  margin-bottom: var(--space-2);
-  background: var(--destructive);
+  background: none;
   border: none;
-  border-radius: var(--radius-lg);
-  color: var(--destructive-foreground);
+  border-radius: var(--radius-sm);
+  color: var(--destructive);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -2438,9 +2653,7 @@ onBeforeUnmount(() => {
 }
 
 .stop-button:hover:not(:disabled) {
-  background: var(--destructive);
-  opacity: 0.9;
-  transform: scale(1.05);
+  color: var(--destructive);
 }
 
 .stop-button:disabled {
@@ -2449,15 +2662,14 @@ onBeforeUnmount(() => {
 }
 
 .send-button {
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  min-height: 32px;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
   padding: 0;
-  margin-bottom: var(--space-2);
   background: var(--primary);
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-full);
   color: var(--primary-foreground);
   cursor: pointer;
   display: flex;
@@ -2469,27 +2681,25 @@ onBeforeUnmount(() => {
 
 .send-button:hover:not(:disabled) {
   background: var(--primary-hover);
-  transform: scale(1.05);
+  color: var(--primary-foreground);
 }
 
 .send-button:disabled {
-  background: var(--muted);
   color: var(--muted-foreground);
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
 .clear-input-button {
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  min-height: 32px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
   padding: 0;
-  margin-bottom: var(--space-2);
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  color: var(--foreground);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -2499,10 +2709,7 @@ onBeforeUnmount(() => {
 }
 
 .clear-input-button:hover:not(:disabled) {
-  background: var(--accent);
-  border-color: var(--border);
   color: var(--foreground);
-  transform: scale(1.05);
 }
 
 .clear-input-button:disabled {
@@ -2511,16 +2718,15 @@ onBeforeUnmount(() => {
 }
 
 .loading-button {
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  min-height: 32px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
   padding: 0;
-  margin-bottom: var(--space-2);
-  background: var(--warning);
+  background: none;
   border: none;
-  border-radius: var(--radius-lg);
-  color: var(--warning-foreground);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
   cursor: not-allowed;
   display: flex;
   align-items: center;
@@ -2544,15 +2750,17 @@ onBeforeUnmount(() => {
 
 .chat-input {
   flex: 1;
-  padding: var(--space-5) var(--space-6);
+  padding: 0;
+  margin-bottom: 2px;
   background: var(--background);
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--radius-lg);
   color: var(--foreground);
-  font-size: 15px;
+  font-size: 13px;
   font-family: inherit;
   resize: none;
-  min-height: var(--input-md);
+  height: 24px;
+  min-height: 24px;
   max-height: 200px;
   overflow-y: auto;
   box-sizing: border-box;
@@ -2563,19 +2771,32 @@ onBeforeUnmount(() => {
   color: transparent;
 }
 
+.chat-input.transcribing-placeholder::placeholder {
+  color: transparent;
+}
+
 .transcribing-overlay {
   position: absolute;
-  left: var(--space-6);
-  top: var(--space-5);
+  left: 0;
+  top: -2px;
   pointer-events: none;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 24px;
+}
+
+.transcribing-spinner {
+  color: var(--muted-foreground);
+  opacity: 0.7;
+  animation: spin 1s linear infinite;
 }
 
 .transcribing-text {
-  font-size: 15px;
+  font-size: 13px;
   font-family: inherit;
-  color: var(--muted-foreground);
-  opacity: 0.7;
+  line-height: 1.5;
 }
 
 .transcribing-text.shimmer-text {
@@ -2617,7 +2838,7 @@ onBeforeUnmount(() => {
 
 .chat-input:focus {
   outline: none;
-  border-color: var(--border);
+  border: none;
 }
 
 .chat-input::-webkit-scrollbar {

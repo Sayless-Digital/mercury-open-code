@@ -19,3 +19,5 @@ echo ""
 echo "=== Following log (live updates) ==="
 tail -f "$LATEST_LOG"
 
+
+

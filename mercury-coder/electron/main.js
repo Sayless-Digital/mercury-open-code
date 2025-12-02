@@ -1,5 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
+const os = require('os');
+const fs = require('fs').promises;
 const { spawn } = require('child_process');
 const pty = require('node-pty');
 const chokidar = require('chokidar');
@@ -588,6 +590,27 @@ function createWindow() {
     return path.join(...pathSegments);
   });
 
+  // Mercury Coder global config operations
+  ipcMain.handle('get-mercury-config-dir', async () => {
+    const configDir = path.join(os.homedir(), '.config', 'mercury-coder');
+    // Ensure directory exists
+    await fs.mkdir(configDir, { recursive: true });
+    return configDir;
+  });
+
+  ipcMain.handle('write-mercury-config', async (event, configData) => {
+    try {
+      const configDir = path.join(os.homedir(), '.config', 'mercury-coder');
+      await fs.mkdir(configDir, { recursive: true });
+      const configPath = path.join(configDir, 'opencode.json');
+      await fs.writeFile(configPath, JSON.stringify(configData, null, 2));
+      return { success: true, path: configPath };
+    } catch (error) {
+      safeConsole.error('[Electron] Error writing Mercury config:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   // Python backend communication
   ipcMain.handle('backend-send-message', async (event, message, context) => {
     try {
@@ -770,7 +793,13 @@ async function startOpencodeServer() {
     const opencodeBackendPath = path.join(__dirname, '..', '..', 'opencode-backend');
     const bunPath = process.env.BUN_PATH || 'bun';
     
+    // Set Mercury Coder global config path
+    const mercuryConfigDir = path.join(os.homedir(), '.config', 'mercury-coder');
+    await fs.mkdir(mercuryConfigDir, { recursive: true });
+    const mercuryConfigPath = path.join(mercuryConfigDir, 'opencode.json');
+    
     safeConsole.log('[OpenCode] Backend path:', opencodeBackendPath);
+    safeConsole.log('[OpenCode] Mercury config path:', mercuryConfigPath);
     
     opencodeProcess = spawn(bunPath, [
       'run',
@@ -786,7 +815,8 @@ async function startOpencodeServer() {
       stdio: 'ignore', // Changed from 'inherit' to prevent EPIPE
       env: { 
         ...process.env,
-        NODE_ENV: 'development'
+        NODE_ENV: 'development',
+        OPENCODE_CONFIG: mercuryConfigPath
       },
       cwd: opencodeBackendPath
     });

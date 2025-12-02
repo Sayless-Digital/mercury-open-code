@@ -129,20 +129,22 @@ export function useOpencode() {
         body: { model: correctModel }
       })
       
-      // 2. Write to opencode.json directly (config resolution reads this)
-      // Note: This creates project-specific config files, which is OpenCode's expected behavior
+      // 2. Write to Mercury Coder global config instead of project directory
       try {
-        const { writeFile } = await import('fs/promises')
-        const { join } = await import('path')
-        const opencodeJsonPath = join(directory, 'opencode.json')
-        const minimalConfig = {
-          $schema: "https://opencode.ai/config.json",
-          model: correctModel
+        if (window.electronAPI?.writeMercuryConfig) {
+          const minimalConfig = {
+            $schema: "https://opencode.ai/config.json",
+            model: correctModel
+          }
+          const result = await window.electronAPI.writeMercuryConfig(minimalConfig)
+          if (result.success) {
+            console.log('[useOpencode] Wrote model to Mercury global config:', result.path)
+          } else {
+            console.warn('[useOpencode] Could not write to Mercury config:', result.error)
+          }
         }
-        await writeFile(opencodeJsonPath, JSON.stringify(minimalConfig, null, 2))
-        console.log('[useOpencode] Wrote model to opencode.json (project-specific config):', opencodeJsonPath)
       } catch (fsErr) {
-        console.warn('[useOpencode] Could not write to opencode.json:', fsErr)
+        console.warn('[useOpencode] Could not write to Mercury config:', fsErr)
       }
       
       // 3. Wait for config to be reloaded
@@ -344,22 +346,22 @@ export function useOpencode() {
       })
       console.log('[useOpencode] Model set to:', modelString, 'Result:', result.data?.model)
       
-      // Also ensure opencode.json exists with the correct model (config resolution reads this)
-      // This is a workaround - ideally Config.update() should write to opencode.json
-      // Note: This creates project-specific config files, which is OpenCode's expected behavior
-      // These files should be added to .gitignore if you don't want them in version control
+      // Also ensure Mercury Coder global config has the correct model
       try {
-        const { writeFile } = await import('fs/promises')
-        const { join } = await import('path')
-        const opencodeJsonPath = join(directory, 'opencode.json')
-        const minimalConfig = {
-          $schema: "https://opencode.ai/config.json",
-          model: modelString
+        if (window.electronAPI?.writeMercuryConfig) {
+          const minimalConfig = {
+            $schema: "https://opencode.ai/config.json",
+            model: modelString
+          }
+          const result = await window.electronAPI.writeMercuryConfig(minimalConfig)
+          if (result.success) {
+            console.log('[useOpencode] Wrote model to Mercury global config:', result.path)
+          } else {
+            console.warn('[useOpencode] Could not write to Mercury config (non-critical):', result.error)
+          }
         }
-        await writeFile(opencodeJsonPath, JSON.stringify(minimalConfig, null, 2))
-        console.log('[useOpencode] Wrote model to opencode.json (project-specific config):', opencodeJsonPath)
       } catch (fsErr) {
-        console.warn('[useOpencode] Could not write to opencode.json (non-critical):', fsErr)
+        console.warn('[useOpencode] Could not write to Mercury config (non-critical):', fsErr)
       }
       
       return result.data || { model: modelString }

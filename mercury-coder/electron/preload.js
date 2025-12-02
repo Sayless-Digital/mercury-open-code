@@ -80,5 +80,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('file-system-change', handler);
     return () => ipcRenderer.removeListener('file-system-change', handler);
   },
+
+  // Mercury Coder global config operations
+  getMercuryConfigDir: () => ipcRenderer.invoke('get-mercury-config-dir'),
+  writeMercuryConfig: (configData) => ipcRenderer.invoke('write-mercury-config', configData),
 });
 

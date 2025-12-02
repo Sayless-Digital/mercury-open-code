@@ -412,3 +412,5 @@ The implementation correctly:
 - **SDK Client Source:** `opencode-backend/packages/sdk/js/src/client.ts`
 - **Our Implementation:** `mercury-coder/src/composables/useOpencode.js`
 
+
+

@@ -48,20 +48,22 @@
                 }"
               >
                 <div class="provider-header">
-                  <div class="provider-icon">
-                    <component :is="getProviderIcon(provider.id)" :size="32" />
+                  <div class="provider-left">
+                    <div class="provider-icon">
+                      <component :is="getProviderIcon(provider.id)" :size="24" />
+                    </div>
+                    <div class="provider-info">
+                      <h3>{{ provider.name || provider.id }}</h3>
+                    </div>
                   </div>
-                  <div class="provider-info">
-                    <h3>{{ provider.name || provider.id }}</h3>
-                    <span class="provider-status">
-                      <span v-if="isProviderConnected(provider.id)" class="status-badge connected">
-                        ✓ Connected
-                      </span>
-                      <span v-else class="status-badge disconnected">
-                        ○ Not configured
-                      </span>
+                  <span class="provider-status">
+                    <span v-if="isProviderConnected(provider.id)" class="status-badge connected">
+                      ✓ Connected
                     </span>
-                  </div>
+                    <span v-else class="status-badge disconnected">
+                      ○ Not configured
+                    </span>
+                  </span>
                 </div>
                 
                 <!-- API Key Input (if not connected) -->
@@ -77,7 +79,7 @@
                       @keydown.enter="saveApiKey(provider.id)"
                     />
                     <button 
-                      class="btn btn-sm btn-primary"
+                      class="btn btn-primary"
                       @click="saveApiKey(provider.id)"
                       :disabled="!apiKeys[provider.id] || connecting"
                     >
@@ -158,27 +160,59 @@
 
           <div class="settings-section">
             <h2>Whisper Transcription Models</h2>
-            <p class="section-description">Select which Whisper model to use for voice transcriptions</p>
+            <p class="section-description">Select and manage Whisper models for voice transcriptions</p>
             
             <div v-if="loadingWhisperModels" class="loading">Loading models...</div>
             <div v-else-if="whisperModelsError" class="error-message">
               {{ whisperModelsError }}
             </div>
-            <div v-else>
-              <div class="setting-item whisper-setting-item">
-                <label class="setting-label" for="whisper-model-select">Transcription Model</label>
-                <p class="setting-description">
-                  Choose the Whisper model for transcribing your voice recordings
-                </p>
-                <div class="whisper-dropdown-wrapper-full">
-                  <CustomDropdown
-                    v-model="selectedWhisperModel"
-                    :options="whisperModelOptions"
-                    placeholder="Select Whisper model..."
-                    option-label="name"
-                    option-value="id"
-                    @change="onWhisperModelChange"
-                  />
+            <div v-else class="whisper-models-list">
+              <div 
+                v-for="model in whisperModels" 
+                :key="model.id"
+                class="whisper-model-item"
+                :class="{ 
+                  active: selectedWhisperModel === model.id,
+                  downloaded: model.downloaded
+                }"
+              >
+                <div class="model-info">
+                  <div class="model-header">
+                    <span class="model-name">{{ model.name }}</span>
+                    <span v-if="model.downloaded" class="downloaded-badge">✓ Downloaded</span>
+                    <span v-else class="not-downloaded-badge">○ Not downloaded</span>
+                  </div>
+                  <div class="model-details">
+                    <span class="model-size">{{ model.size }}</span>
+                    <span class="model-separator">•</span>
+                    <span class="model-description">{{ model.description }}</span>
+                  </div>
+                </div>
+                <div class="model-actions">
+                  <button
+                    v-if="!model.downloaded"
+                    class="btn btn-sm btn-primary"
+                    @click="downloadModel(model.id)"
+                    :disabled="downloadingModel === model.id"
+                  >
+                    <Download v-if="downloadingModel !== model.id" :size="14" />
+                    <Loader2 v-else class="spinner" :size="14" />
+                    {{ downloadingModel === model.id ? 'Downloading...' : 'Download' }}
+                  </button>
+                  <button
+                    v-else
+                    class="btn btn-sm"
+                    :class="{ 'btn-active': selectedWhisperModel === model.id }"
+                    @click="selectModel(model.id)"
+                  >
+                    {{ selectedWhisperModel === model.id ? 'Selected' : 'Select' }}
+                  </button>
+                </div>
+                <div v-if="downloadingModel === model.id && downloadProgress" class="download-progress">
+                  <div class="progress-bar">
+                    <div class="progress-fill" :style="{ width: downloadProgress + '%' }"></div>
+                  </div>
+                  <span class="progress-text">{{ downloadProgress }}%</span>
                 </div>
               </div>
             </div>
@@ -193,21 +227,26 @@
               Choose which agent to use by default for new conversations
             </p>
             
-            <div class="agent-grid">
+            <div class="agent-list">
               <div 
                 v-for="agent in agents" 
                 :key="agent.id"
-                class="agent-card"
+                class="agent-item"
                 :class="{ active: defaultAgent === agent.id }"
                 @click="setDefaultAgent(agent.id)"
               >
                 <div class="agent-icon">{{ agent.icon }}</div>
-                <h3>{{ agent.name }}</h3>
-                <p>{{ agent.description }}</p>
-                <div class="agent-tools">
-                  <span v-for="tool in agent.tools" :key="tool" class="tool-badge">
-                    {{ tool }}
-                  </span>
+                <div class="agent-content">
+                  <h3>{{ agent.name }}</h3>
+                  <p>{{ agent.description }}</p>
+                  <div class="agent-tools">
+                    <span v-for="tool in agent.tools" :key="tool" class="tool-badge">
+                      {{ tool }}
+                    </span>
+                  </div>
+                </div>
+                <div class="agent-check">
+                  <div v-if="defaultAgent === agent.id" class="check-icon">✓</div>
                 </div>
               </div>
             </div>
@@ -219,8 +258,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { Cloud, Mic, Settings as SettingsIcon, ArrowLeft, Cpu, Sparkles, Box, Wrench } from 'lucide-vue-next'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { Cloud, Mic, Settings as SettingsIcon, ArrowLeft, Cpu, Sparkles, Box, Wrench, Download, Loader2 } from 'lucide-vue-next'
 import { useProjectStore } from '@/stores/project'
 import { useSettingsStore } from '@/stores/settings'
 import { useModelsStore } from '@/stores/models'
@@ -359,13 +398,9 @@ const whisperModels = ref([])
 const loadingWhisperModels = ref(false)
 const whisperModelsError = ref(null)
 const selectedWhisperModel = ref('')
-
-const whisperModelOptions = computed(() => {
-  return whisperModels.value.map(model => ({
-    id: model.id,
-    name: `${model.name}${model.downloaded ? ' ✓' : ''} - ${model.description}`
-  }))
-})
+const downloadingModel = ref(null)
+const downloadProgress = ref(0)
+let downloadEventSource = null
 
 async function loadWhisperModels() {
   try {
@@ -374,13 +409,80 @@ async function loadWhisperModels() {
     const data = await response.json()
     if (data.success) {
       whisperModels.value = data.models
-      selectedWhisperModel.value = data.current_model || 'base'
+      selectedWhisperModel.value = settingsStore.whisperModelId || data.current_model || 'base'
     }
   } catch (err) {
     whisperModelsError.value = err.message
     console.error('Failed to load Whisper models:', err)
   } finally {
     loadingWhisperModels.value = false
+  }
+}
+
+function selectModel(modelId) {
+  selectedWhisperModel.value = modelId
+  onWhisperModelChange(modelId)
+}
+
+async function downloadModel(modelId) {
+  if (downloadingModel.value) {
+    return // Already downloading
+  }
+  
+  try {
+    downloadingModel.value = modelId
+    downloadProgress.value = 0
+    
+    const response = await fetch('http://127.0.0.1:8001/api/whisper/download', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ model_id: modelId })
+    })
+    
+    if (!response.ok) {
+      throw new Error(`Failed to start download: ${response.statusText}`)
+    }
+    
+    // Handle SSE stream
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      
+      const chunk = decoder.decode(value)
+      const lines = chunk.split('\n')
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6))
+            if (data.progress !== undefined) {
+              downloadProgress.value = data.progress
+            }
+            if (data.type === 'complete') {
+              downloadProgress.value = 100
+              await loadWhisperModels() // Reload to update download status
+              downloadingModel.value = null
+              downloadProgress.value = 0
+              return
+            }
+            if (data.type === 'error') {
+              throw new Error(data.message || 'Download failed')
+            }
+          } catch (e) {
+            // Ignore JSON parse errors for incomplete chunks
+          }
+        }
+      }
+    }
+  } catch (err) {
+    alert(`Failed to download model: ${err.message}`)
+    downloadingModel.value = null
+    downloadProgress.value = 0
   }
 }
 
@@ -408,98 +510,111 @@ onMounted(async () => {
     selectedModels.value[currentModel.value.providerId] = currentModel.value.modelId
   }
 })
+
+onUnmounted(() => {
+  if (downloadEventSource) {
+    downloadEventSource.close()
+    downloadEventSource = null
+  }
+})
 </script>
 
 <style scoped>
 .settings-page {
   height: 100vh;
   display: flex;
-  background: var(--bg-primary);
+  background: var(--background);
 }
 
 .settings-panel {
   flex: 1;
   display: flex;
   flex-direction: column;
+  background: var(--sidebar);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
 }
 
 .settings-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid var(--border-color);
-  background: var(--bg-secondary);
+  padding: var(--space-4);
+  background: var(--muted);
+  border-bottom: 1px solid var(--border);
+  height: var(--header-md);
+  min-height: var(--header-md);
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .back-button {
   background: none;
   border: none;
-  color: var(--text-secondary);
+  color: var(--muted-foreground);
   cursor: pointer;
-  padding: 0.5rem;
-  border-radius: 4px;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
+  transition: all 0.2s;
 }
 
 .back-button:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--accent);
+  color: var(--foreground);
 }
 
 .settings-icon {
-  color: var(--text-secondary);
+  color: var(--muted-foreground);
 }
 
 .settings-title {
-  font-size: 1.1rem;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--foreground);
 }
 
 .settings-tabs {
   display: flex;
-  gap: 0.5rem;
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid var(--border-color);
-  background: var(--bg-secondary);
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--muted);
 }
 
 .tab-button {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
   background: none;
   border: none;
-  color: var(--text-secondary);
+  color: var(--muted-foreground);
   cursor: pointer;
-  border-radius: 4px;
-  font-size: 0.9rem;
+  border-radius: var(--radius-md);
+  font-size: 12px;
   transition: all 0.2s;
 }
 
 .tab-button:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
+  background: var(--accent);
+  color: var(--foreground);
 }
 
 .tab-button.active {
-  background: var(--primary-color);
-  color: white;
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 
 .settings-content {
   flex: 1;
   overflow-y: auto;
-  padding: 2rem;
+  padding: var(--space-6);
 }
 
 .tab-content {
@@ -508,132 +623,151 @@ onMounted(async () => {
 }
 
 .settings-section {
-  margin-bottom: 2rem;
+  margin-bottom: var(--space-8);
 }
 
 .settings-section h2 {
-  font-size: 1.3rem;
-  margin-bottom: 0.5rem;
-  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+  color: var(--foreground);
 }
 
 .section-description {
-  color: var(--text-secondary);
-  margin-bottom: 1.5rem;
+  color: var(--muted-foreground);
+  margin-bottom: var(--space-6);
   line-height: 1.5;
+  font-size: 12px;
 }
 
 /* Provider Cards */
 .provider-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-  gap: 1rem;
-  margin-top: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-4);
 }
 
 .provider-card {
-  border: 2px solid var(--border-color);
-  border-radius: 8px;
-  padding: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
   transition: all 0.2s;
-  background: var(--bg-secondary);
+  background: var(--card);
 }
 
 .provider-card:hover {
-  border-color: var(--primary-color-dim);
+  border-color: var(--ring);
 }
 
 .provider-card.connected {
-  border-color: var(--success-color);
-  background: rgba(34, 197, 94, 0.05);
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 5%, var(--card) 95%);
 }
 
 .provider-card.active {
-  box-shadow: 0 0 0 2px var(--primary-color);
+  box-shadow: 0 0 0 2px var(--primary);
 }
 
 .provider-header {
   display: flex;
-  gap: 1rem;
-  margin-bottom: 1rem;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--space-4);
+}
+
+.provider-left {
+  display: flex;
+  gap: var(--space-3);
+  flex: 1;
 }
 
 .provider-icon {
   flex-shrink: 0;
-  color: var(--primary-color);
+  color: var(--primary);
 }
 
 .provider-info h3 {
-  margin: 0 0 0.25rem 0;
-  font-size: 1.1rem;
-  color: var(--text-primary);
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.provider-status {
+  flex-shrink: 0;
 }
 
 .status-badge {
-  font-size: 0.85rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
+  font-size: 11px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
   font-weight: 500;
 }
 
 .status-badge.connected {
-  background: var(--success-color);
-  color: white;
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 
 .status-badge.disconnected {
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
+  background: var(--muted);
+  color: var(--muted-foreground);
 }
 
 .provider-auth {
-  margin-top: 1rem;
+  margin-top: var(--space-4);
 }
 
 .provider-auth label {
   display: block;
-  font-size: 0.9rem;
+  font-size: 12px;
   font-weight: 500;
-  color: var(--text-secondary);
-  margin-bottom: 0.5rem;
+  color: var(--foreground);
+  margin-bottom: var(--space-2);
 }
 
 .api-key-input-group {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .api-key-input {
   flex: 1;
-  padding: 0.5rem;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   font-family: monospace;
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  font-size: 12px;
+  background: var(--background);
+  color: var(--foreground);
 }
 
 .api-key-input:focus {
   outline: none;
-  border-color: var(--primary-color);
+  border-color: var(--ring);
 }
 
 .btn {
-  padding: 0.5rem 1rem;
+  padding: var(--space-2) var(--space-4);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   font-weight: 500;
+  font-size: 12px;
   transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .btn-primary {
-  background: var(--primary-color);
-  color: white;
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--primary-color-bright);
+  opacity: 0.9;
 }
 
 .btn-primary:disabled {
@@ -642,18 +776,23 @@ onMounted(async () => {
 }
 
 .btn-sm {
-  padding: 0.4rem 0.8rem;
-  font-size: 0.9rem;
+  padding: var(--space-2) var(--space-3);
+  font-size: 11px;
+}
+
+.btn-active {
+  background: var(--primary);
+  color: var(--primary-foreground);
 }
 
 .help-text {
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-  margin-top: 0.5rem;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  margin-top: var(--space-2);
 }
 
 .help-text a {
-  color: var(--primary-color);
+  color: var(--primary);
   text-decoration: none;
 }
 
@@ -663,39 +802,24 @@ onMounted(async () => {
 
 .provider-models label {
   display: block;
-  font-size: 0.9rem;
+  font-size: 12px;
   font-weight: 500;
-  color: var(--text-secondary);
-  margin-bottom: 0.5rem;
-}
-
-.model-select {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  cursor: pointer;
-}
-
-.model-select:focus {
-  outline: none;
-  border-color: var(--primary-color);
+  color: var(--foreground);
+  margin-bottom: var(--space-2);
 }
 
 .config-display {
-  background: var(--bg-secondary);
-  padding: 1rem;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
+  background: var(--muted);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
 }
 
 .config-item {
   display: flex;
   justify-content: space-between;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid var(--border-color);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
 }
 
 .config-item:last-child {
@@ -703,86 +827,109 @@ onMounted(async () => {
 }
 
 .config-label {
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-weight: 500;
+  color: var(--muted-foreground);
+  font-size: 12px;
 }
 
 .config-value {
   font-family: monospace;
-  color: var(--text-primary);
+  color: var(--foreground);
+  font-size: 12px;
 }
 
-/* Agent Grid */
-.agent-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 1rem;
-  margin-top: 1rem;
+/* Agent List - Compact */
+.agent-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
 }
 
-.agent-card {
-  border: 2px solid var(--border-color);
-  border-radius: 8px;
-  padding: 1.5rem;
+.agent-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.2s;
-  text-align: center;
-  background: var(--bg-secondary);
+  background: var(--card);
 }
 
-.agent-card:hover {
-  border-color: var(--primary-color);
-  transform: translateY(-2px);
+.agent-item:hover {
+  border-color: var(--ring);
+  background: var(--accent);
 }
 
-.agent-card.active {
-  border-color: var(--primary-color);
-  background: rgba(59, 130, 246, 0.1);
+.agent-item.active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, var(--card) 90%);
 }
 
 .agent-icon {
-  font-size: 3rem;
-  margin-bottom: 0.5rem;
+  font-size: 20px;
+  flex-shrink: 0;
 }
 
-.agent-card h3 {
-  margin: 0.5rem 0;
-  font-size: 1.1rem;
-  color: var(--text-primary);
+.agent-content {
+  flex: 1;
 }
 
-.agent-card p {
-  font-size: 0.9rem;
-  color: var(--text-secondary);
-  margin: 0.5rem 0;
+.agent-content h3 {
+  margin: 0 0 var(--space-1) 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.agent-content p {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  margin: 0 0 var(--space-2) 0;
+  line-height: 1.4;
 }
 
 .agent-tools {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
-  justify-content: center;
-  margin-top: 0.75rem;
+  gap: var(--space-1);
 }
 
 .tool-badge {
-  font-size: 0.75rem;
-  padding: 0.2rem 0.4rem;
-  background: var(--bg-tertiary);
-  border-radius: 4px;
-  color: var(--text-secondary);
+  font-size: 10px;
+  padding: 2px var(--space-2);
+  background: var(--muted);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+}
+
+.agent-check {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.check-icon {
+  color: var(--primary);
+  font-weight: bold;
+  font-size: 14px;
 }
 
 /* Audio Settings */
 .setting-item {
-  margin-bottom: 1.5rem;
+  margin-bottom: var(--space-6);
 }
 
 .setting-content {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 1rem;
+  gap: var(--space-4);
 }
 
 .setting-info {
@@ -790,22 +937,24 @@ onMounted(async () => {
 }
 
 .setting-label {
-  font-weight: 600;
-  color: var(--text-primary);
+  font-weight: 500;
+  color: var(--foreground);
   display: block;
-  margin-bottom: 0.25rem;
+  margin-bottom: var(--space-1);
+  font-size: 12px;
 }
 
 .setting-description {
-  font-size: 0.9rem;
-  color: var(--text-secondary);
+  font-size: 11px;
+  color: var(--muted-foreground);
   line-height: 1.4;
 }
 
 .switch-container {
   position: relative;
-  width: 48px;
+  width: 44px;
   height: 24px;
+  flex-shrink: 0;
 }
 
 .switch-input {
@@ -821,7 +970,7 @@ onMounted(async () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: var(--bg-tertiary);
+  background-color: var(--muted);
   transition: 0.3s;
   border-radius: 24px;
 }
@@ -833,32 +982,152 @@ onMounted(async () => {
   width: 18px;
   left: 3px;
   bottom: 3px;
-  background-color: white;
+  background-color: var(--background);
   transition: 0.3s;
   border-radius: 50%;
 }
 
 .switch-input:checked + .switch-slider {
-  background-color: var(--primary-color);
+  background-color: var(--primary);
 }
 
 .switch-input:checked + .switch-slider:before {
-  transform: translateX(24px);
+  transform: translateX(20px);
 }
 
-.whisper-dropdown-wrapper-full {
+/* Whisper Models List */
+.whisper-models-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.whisper-model-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  transition: all 0.2s;
+}
+
+.whisper-model-item:hover {
+  border-color: var(--ring);
+}
+
+.whisper-model-item.active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, var(--card) 90%);
+}
+
+.whisper-model-item.downloaded {
+  border-color: var(--primary);
+}
+
+.model-info {
+  flex: 1;
+}
+
+.model-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.model-name {
+  font-weight: 500;
+  color: var(--foreground);
+  font-size: 12px;
+}
+
+.downloaded-badge {
+  font-size: 10px;
+  padding: 2px var(--space-2);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+}
+
+.not-downloaded-badge {
+  font-size: 10px;
+  padding: 2px var(--space-2);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  border-radius: var(--radius-sm);
+}
+
+.model-details {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+.model-separator {
+  color: var(--muted-foreground);
+}
+
+.model-actions {
+  flex-shrink: 0;
+}
+
+.download-progress {
   width: 100%;
-  margin-top: 0.5rem;
+  margin-top: var(--space-2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.progress-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--muted);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--primary);
+  transition: width 0.3s;
+}
+
+.progress-text {
+  font-size: 10px;
+  color: var(--muted-foreground);
+  min-width: 40px;
+  text-align: right;
 }
 
 .loading,
 .error-message {
   text-align: center;
-  padding: 2rem;
-  color: var(--text-secondary);
+  padding: var(--space-8);
+  color: var(--muted-foreground);
+  font-size: 12px;
 }
 
 .error-message {
-  color: var(--error-color);
+  color: var(--destructive);
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>
