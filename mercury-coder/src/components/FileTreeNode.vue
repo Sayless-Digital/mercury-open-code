@@ -10,19 +10,52 @@
       }"
       :style="{ paddingLeft: `${depth * 16 + 8}px` }"
       @click="handleClick"
+      @contextmenu.prevent="handleContextMenu"
     >
-      <!-- Dropdown arrow for directories -->
-      <ChevronRight 
-        v-if="file.isDirectory" 
-        class="chevron-icon"
-        :class="{ 'expanded': expanded }"
-        :size="14"
-      />
-      <span v-else class="chevron-spacer"></span>
-      
-      <component :is="getIcon" class="node-icon" :size="16" />
-      <span class="node-name">{{ file.name }}</span>
+      <!-- Inline rename input -->
+      <div v-if="isRenaming" class="rename-input-wrapper">
+        <input
+          ref="renameInputRef"
+          v-model="renameValue"
+          type="text"
+          class="rename-input"
+          @keydown.enter.prevent="confirmRename"
+          @keydown.escape="cancelRename"
+          @blur="cancelRename"
+        />
+      </div>
+      <template v-else>
+        <!-- Dropdown arrow for directories -->
+        <ChevronRight 
+          v-if="file.isDirectory" 
+          class="chevron-icon"
+          :class="{ 'expanded': expanded }"
+          :size="14"
+        />
+        <span v-else class="chevron-spacer"></span>
+        
+        <component :is="getIcon" class="node-icon" :size="16" />
+        <span class="node-name">{{ file.name }}</span>
+      </template>
     </div>
+    
+    <!-- Context Menu -->
+    <div 
+      v-if="contextMenuVisible"
+      class="context-menu"
+      :style="{ top: contextMenuY + 'px', left: contextMenuX + 'px' }"
+      @click.stop
+    >
+      <button class="context-menu-item" @click="startRename">
+        <Pencil :size="14" />
+        <span>Rename</span>
+      </button>
+      <button class="context-menu-item context-menu-item-danger" @click="handleDelete">
+        <Trash2 :size="14" />
+        <span>Delete</span>
+      </button>
+    </div>
+    
     <div v-if="file.isDirectory && expanded" class="node-children">
       <FileTreeNode
         v-for="child in children"
@@ -37,11 +70,11 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { 
   Folder, FolderOpen, File, FileText, FileCode, FileJson, 
   FileImage, FileType, Code, FileCode2, Image as ImageIcon,
-  ChevronRight
+  ChevronRight, Pencil, Trash2
 } from 'lucide-vue-next';
 
 const props = defineProps({
@@ -66,6 +99,16 @@ const emit = defineEmits(['file-selected']);
 const expanded = ref(props.file.children ? props.file.children.length > 0 : false);
 const children = ref(props.file.children || []);
 const loading = ref(false);
+
+// Context menu state
+const contextMenuVisible = ref(false);
+const contextMenuX = ref(0);
+const contextMenuY = ref(0);
+
+// Rename state
+const isRenaming = ref(false);
+const renameValue = ref('');
+const renameInputRef = ref(null);
 
 // Check if this file/folder is the active one
 const isActive = computed(() => {
@@ -207,6 +250,110 @@ watch(() => props.activeFilePath, async () => {
   await autoExpandForActiveFile();
 }, { immediate: true });
 
+const handleContextMenu = (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  contextMenuX.value = event.clientX;
+  contextMenuY.value = event.clientY;
+  contextMenuVisible.value = true;
+  
+  // Close context menu when clicking outside
+  const closeMenu = (e) => {
+    if (!e.target.closest('.context-menu') && !e.target.closest('.node-item')) {
+      contextMenuVisible.value = false;
+      document.removeEventListener('click', closeMenu);
+    }
+  };
+  setTimeout(() => {
+    document.addEventListener('click', closeMenu);
+  }, 0);
+};
+
+const startRename = () => {
+  contextMenuVisible.value = false;
+  isRenaming.value = true;
+  renameValue.value = props.file.name;
+  nextTick(() => {
+    if (renameInputRef.value) {
+      renameInputRef.value.focus();
+      // Select filename without extension for easier renaming
+      const lastDot = renameValue.value.lastIndexOf('.');
+      if (lastDot > 0) {
+        renameInputRef.value.setSelectionRange(0, lastDot);
+      } else {
+        renameInputRef.value.select();
+      }
+    }
+  });
+};
+
+const confirmRename = async () => {
+  if (!renameValue.value.trim() || renameValue.value === props.file.name) {
+    cancelRename();
+    return;
+  }
+  
+  // Construct new path by replacing the filename
+  // Handle both forward and backward slashes for cross-platform compatibility
+  const filePath = props.file.path;
+  const isWindows = filePath.includes('\\');
+  const separator = isWindows ? '\\' : '/';
+  const lastSlash = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+  const dir = lastSlash >= 0 ? filePath.substring(0, lastSlash + 1) : '';
+  const newPath = dir + renameValue.value.trim();
+  
+  if (!window.electronAPI?.renameFile) {
+    alert('Rename functionality is not available');
+    cancelRename();
+    return;
+  }
+  
+  try {
+    const result = await window.electronAPI.renameFile(props.file.path, newPath);
+    if (result.success) {
+      isRenaming.value = false;
+      // The file system watcher should detect the change and refresh
+    } else {
+      alert(`Failed to rename: ${result.error}`);
+      cancelRename();
+    }
+  } catch (error) {
+    alert(`Failed to rename: ${error.message}`);
+    cancelRename();
+  }
+};
+
+const cancelRename = () => {
+  isRenaming.value = false;
+  renameValue.value = '';
+};
+
+const handleDelete = async () => {
+  contextMenuVisible.value = false;
+  
+  const itemType = props.file.isDirectory ? 'folder' : 'file';
+  const confirmed = confirm(`Are you sure you want to delete this ${itemType}?\n\n${props.file.name}\n\nThis action cannot be undone.`);
+  
+  if (!confirmed) {
+    return;
+  }
+  
+  if (!window.electronAPI?.deleteFile) {
+    alert('Delete functionality is not available');
+    return;
+  }
+  
+  try {
+    const result = await window.electronAPI.deleteFile(props.file.path);
+    if (!result.success) {
+      alert(`Failed to delete: ${result.error}`);
+    }
+    // The file system watcher should detect the change and refresh
+  } catch (error) {
+    alert(`Failed to delete: ${error.message}`);
+  }
+};
+
 onMounted(async () => {
   if (props.activeFilePath && props.file.isDirectory) {
     await autoExpandForActiveFile();
@@ -301,6 +448,71 @@ onUnmounted(() => {
 
 .node-children {
   margin-left: 0;
+}
+
+.rename-input-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.rename-input {
+  flex: 1;
+  padding: 2px 4px;
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+
+.context-menu {
+  position: fixed;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10000;
+  min-width: 150px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 4px;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.context-menu-item:hover {
+  background: var(--accent);
+}
+
+.context-menu-item-danger {
+  color: var(--destructive);
+}
+
+.context-menu-item-danger:hover {
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+}
+
+.context-menu-item svg {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
 }
 </style>
 

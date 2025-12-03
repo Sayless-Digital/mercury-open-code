@@ -396,6 +396,32 @@ function createWindow() {
     }
   });
 
+  ipcMain.handle('fs-delete-file', async (event, filePath) => {
+    const fs = require('fs').promises;
+    const path = require('path');
+    try {
+      const stats = await fs.stat(filePath);
+      if (stats.isDirectory()) {
+        await fs.rmdir(filePath, { recursive: true });
+      } else {
+        await fs.unlink(filePath);
+      }
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('fs-rename-file', async (event, oldPath, newPath) => {
+    const fs = require('fs').promises;
+    try {
+      await fs.rename(oldPath, newPath);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
   // Dialog handlers
   ipcMain.handle('dialog-open-folder', async () => {
     if (mainWindow) {

@@ -525,11 +525,23 @@ function resetRightColumn() {
 }
 
 function resetTerminalHeight() {
-  terminalHeight.value = DEFAULT_TERMINAL_HEIGHT;
+  // Calculate half of available height
+  const viewportHeight = window.innerHeight;
+  const titleBarHeight = 48; // Approximate title bar height
+  const padding = 32; // Total padding
+  const availableHeight = viewportHeight - titleBarHeight - padding;
+  const calculatedDefaultHeight = Math.floor(availableHeight / 2);
+  terminalHeight.value = calculatedDefaultHeight;
 }
 
 function resetLeftEditorHeight() {
-  leftEditorHeight.value = DEFAULT_LEFT_EDITOR_HEIGHT;
+  // Calculate half of available height
+  const viewportHeight = window.innerHeight;
+  const titleBarHeight = 48; // Approximate title bar height
+  const padding = 32; // Total padding
+  const availableHeight = viewportHeight - titleBarHeight - padding;
+  const calculatedDefaultHeight = Math.floor(availableHeight / 2);
+  leftEditorHeight.value = calculatedDefaultHeight;
 }
 
 function resetLayoutArrangement() {
@@ -617,7 +629,12 @@ onMounted(() => {
   const savedLeftEditorHeight = localStorage.getItem('mercury-left-editor-height');
   if (savedLeftWidth) leftColumnWidth.value = parseInt(savedLeftWidth);
   if (savedRightWidth) rightColumnWidth.value = parseInt(savedRightWidth);
-  if (savedTerminalHeight) terminalHeight.value = parseInt(savedTerminalHeight);
+  if (savedTerminalHeight) {
+    terminalHeight.value = parseInt(savedTerminalHeight);
+  } else {
+    // Set to calculated default if not saved
+    terminalHeight.value = calculatedDefaultHeight;
+  }
   if (savedLeftEditorHeight) {
     leftEditorHeight.value = parseInt(savedLeftEditorHeight);
   } else {
