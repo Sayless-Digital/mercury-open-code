@@ -26,18 +26,77 @@
         </button>
       </div>
     </div>
+    
+    <!-- Context Menu -->
+    <div 
+      v-if="contextMenu.show"
+      ref="contextMenuRef"
+      class="context-menu"
+      :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
+    >
+      <button @click="handleRenameManual" class="context-menu-item">
+        <Edit3 :size="14" />
+        Rename Manually
+      </button>
+      <button @click="handleRenameAI" class="context-menu-item">
+        <Sparkles :size="14" />
+        Rename with AI
+      </button>
+      <button @click="handleDeleteSession" class="context-menu-item destructive">
+        <Trash2 :size="14" />
+        Delete Session
+      </button>
+    </div>
+    
+    <!-- Rename Dialog -->
+    <div v-if="renameDialog.show" class="dialog-overlay" @click="closeRenameDialog">
+      <div class="dialog" @click.stop>
+        <h3>Rename Session</h3>
+        <input 
+          ref="renameInputRef"
+          v-model="renameDialog.title"
+          type="text"
+          class="rename-input"
+          placeholder="Enter new session name"
+          @keyup.enter="saveRename"
+          @keyup.esc="closeRenameDialog"
+        />
+        <div class="dialog-buttons">
+          <button @click="closeRenameDialog" class="btn btn-secondary">Cancel</button>
+          <button @click="saveRename" class="btn btn-primary">Save</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, nextTick, onBeforeUnmount } from 'vue'
 import { useSessionStore } from '@/stores/session'
-import { X, Plus } from 'lucide-vue-next'
+import { X, Plus, Edit3, Sparkles, Trash2 } from 'lucide-vue-next'
 
 const sessionStore = useSessionStore()
 
 const openedSessions = computed(() => sessionStore.openedSessionsList)
 const activeSessionId = computed(() => sessionStore.activeSessionId)
+
+// Context menu state
+const contextMenu = ref({
+  show: false,
+  x: 0,
+  y: 0,
+  session: null
+})
+
+// Rename dialog state
+const renameDialog = ref({
+  show: false,
+  title: '',
+  sessionId: null
+})
+
+const contextMenuRef = ref(null)
+const renameInputRef = ref(null)
 
 function getSessionTitle(session) {
   if (session.title && !session.title.startsWith('New session - ') && !session.title.startsWith('Child session - ')) {
@@ -68,13 +127,86 @@ function handleClose(sessionId) {
 }
 
 function handleContextMenu(event, session) {
-  // Could add context menu for rename/delete here
   event.preventDefault()
+  contextMenu.value = {
+    show: true,
+    x: event.clientX,
+    y: event.clientY,
+    session: session
+  }
 }
 
-// Load sessions on mount
+function closeContextMenu() {
+  contextMenu.value.show = false
+}
+
+function handleRenameManual() {
+  renameDialog.value = {
+    show: true,
+    title: contextMenu.value.session.title || '',
+    sessionId: contextMenu.value.session.id
+  }
+  closeContextMenu()
+  
+  // Focus input after it's rendered
+  nextTick(() => {
+    renameInputRef.value?.focus()
+    renameInputRef.value?.select()
+  })
+}
+
+async function handleRenameAI() {
+  const sessionId = contextMenu.value.session.id
+  closeContextMenu()
+  
+  try {
+    await sessionStore.renameSessionWithAI(sessionId)
+  } catch (err) {
+    console.error('Failed to rename session with AI:', err)
+    alert('Failed to rename session. Please try again.')
+  }
+}
+
+async function handleDeleteSession() {
+  const sessionId = contextMenu.value.session.id
+  closeContextMenu()
+  
+  if (confirm('Are you sure you want to delete this session?')) {
+    await sessionStore.deleteSession(sessionId)
+  }
+}
+
+function closeRenameDialog() {
+  renameDialog.value.show = false
+}
+
+async function saveRename() {
+  const { sessionId, title } = renameDialog.value
+  if (title.trim()) {
+    try {
+      await sessionStore.updateSessionTitle(sessionId, title.trim())
+      closeRenameDialog()
+    } catch (err) {
+      console.error('Failed to rename session:', err)
+      alert('Failed to rename session. Please try again.')
+    }
+  }
+}
+
+// Close context menu when clicking outside
+function handleClickOutside(event) {
+  if (contextMenu.value.show && contextMenuRef.value && !contextMenuRef.value.contains(event.target)) {
+    closeContextMenu()
+  }
+}
+
 onMounted(async () => {
   await sessionStore.loadSessions()
+  document.addEventListener('click', handleClickOutside)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside)
 })
 </script>
 
@@ -191,6 +323,128 @@ onMounted(async () => {
 .session-tab-new:hover {
   background: var(--muted);
   color: var(--foreground);
+}
+
+/* Context Menu */
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  background: var(--popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: var(--space-1);
+  min-width: 180px;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background 0.2s ease;
+}
+
+.context-menu-item:hover {
+  background: var(--accent);
+}
+
+.context-menu-item.destructive {
+  color: var(--destructive);
+}
+
+.context-menu-item.destructive:hover {
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+}
+
+/* Dialog Overlay */
+.dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.dialog {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  min-width: 400px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.dialog h3 {
+  margin: 0 0 var(--space-4) 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.rename-input {
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 14px;
+  font-family: inherit;
+  margin-bottom: var(--space-4);
+}
+
+.rename-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.btn {
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+.btn-secondary {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+}
+
+.btn-secondary:hover {
+  background: var(--muted);
 }
 </style>
 

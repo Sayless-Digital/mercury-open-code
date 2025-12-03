@@ -10,7 +10,7 @@ The main unified command for managing Mercury Coder:
 
 ```bash
 mercury                # Show help and available commands
-mercury start          # Start Mercury Coder
+mercury start          # Start Mercury Coder (auto-stops if already running)
 mercury stop           # Stop Mercury Coder
 mercury restart        # Restart Mercury Coder
 mercury status         # Check if Mercury Coder is running
@@ -39,10 +39,12 @@ mercury-coder
 ```
 
 This will:
-1. Clean up any old processes
-2. Start the local OpenCode backend (port 4096)
-3. Start the Vite frontend (port 5173)
-4. Launch the Electron desktop app
+1. Check if Mercury is already running
+2. Auto-stop existing session if running
+3. Clean up any old processes
+4. Start the local OpenCode backend (port 4096)
+5. Start the Vite frontend (port 5173)
+6. Launch the Electron desktop app
 
 ### Stopping Mercury Coder
 
@@ -203,16 +205,17 @@ ls -lh /usr/local/bin/mercury*
 sudo chmod +x /usr/local/bin/mercury*
 ```
 
-### "Already running" error
+### "Already running" behavior
+
+As of the latest update, `mercury start` automatically stops any existing session before starting a new one. You no longer need to manually stop first.
 
 ```bash
-# Force stop first
+# This now works even if Mercury is already running
+mercury start
+
+# But you can still manually stop if needed
 mercury stop
-
-# Wait a moment
 sleep 2
-
-# Try starting again
 mercury start
 ```
 

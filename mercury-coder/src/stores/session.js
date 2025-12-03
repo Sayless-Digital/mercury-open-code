@@ -223,17 +223,25 @@ export const useSessionStore = defineStore('session', () => {
       
       console.log('[SessionStore] Switching to session:', sessionId)
       
-      // Simple: just switch the session ID in opencode
-      // This will trigger events to repopulate messageMap
-      await opencode.switchSession(sessionId)
-      
-      // Update active session
+      // Update active session FIRST
       activeSessionId.value = sessionId
       
       // Add to opened sessions if not already there
       if (!openedSessions.value.includes(sessionId)) {
         openedSessions.value.push(sessionId)
       }
+      
+      // Switch the session ID in opencode
+      await opencode.switchSession(sessionId)
+      
+      // Wait for Vue reactivity to settle
+      await new Promise(resolve => setTimeout(resolve, 0))
+      
+      // Manually trigger message loading in ChatStore
+      // This is needed because the watch in ChatStore doesn't fire for some reason
+      const { useChatStore } = await import('./chat')
+      const chatStore = useChatStore()
+      await chatStore.loadMessagesForSession(sessionId)
       
       // Save state after switching
       saveSessionState()
@@ -301,24 +309,57 @@ export const useSessionStore = defineStore('session', () => {
   async function updateSessionTitle(sessionId, title) {
     try {
       // Update via API
-      const result = await opencode.client.value.session.update({
-        path: { id: sessionId },
-        body: { title }
-      })
+      const result = await opencode.updateSession(sessionId, { title })
       
-      if (result.data) {
+      if (result) {
         // Update in sessions list
         const index = sessions.value.findIndex(s => s.id === sessionId)
         if (index !== -1) {
-          sessions.value[index] = result.data
+          sessions.value[index] = result
         }
+        
+        // Save state
+        saveSessionState()
       }
       
-      return result.data
+      return result
     } catch (err) {
       error.value = err.message
       console.error('[SessionStore] Update session title error:', err)
       throw err
+    }
+  }
+
+  /**
+   * Rename session using AI (generates title from conversation)
+   */
+  async function renameSessionWithAI(sessionId) {
+    try {
+      loading.value = true
+      console.log('[SessionStore] Renaming session with AI:', sessionId)
+      
+      const result = await opencode.renameSessionWithAI(sessionId)
+      
+      if (result) {
+        // Update in sessions list
+        const index = sessions.value.findIndex(s => s.id === sessionId)
+        if (index !== -1) {
+          sessions.value[index] = result
+        }
+        
+        // Save state
+        saveSessionState()
+        
+        console.log('[SessionStore] Session renamed to:', result.title)
+      }
+      
+      return result
+    } catch (err) {
+      error.value = err.message
+      console.error('[SessionStore] Rename session with AI error:', err)
+      throw err
+    } finally {
+      loading.value = false
     }
   }
 
@@ -436,6 +477,7 @@ export const useSessionStore = defineStore('session', () => {
     switchSession,
     deleteSession,
     updateSessionTitle,
+    renameSessionWithAI,
     openSession,
     closeSession,
     clearAllSessions

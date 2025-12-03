@@ -17,14 +17,34 @@ export function setSharedEvents(events) {
   sharedEvents = events
 }
 
+// Singleton state shared across all useOpencode() calls
+// This ensures SessionStore and ChatStore use the same sessionId
+let sharedState = null
+
+function getSharedState() {
+  if (!sharedState) {
+    console.log('[useOpencode] Creating shared state singleton')
+    sharedState = {
+      sessionId: ref(null),
+      loading: ref(false),
+      error: ref(null),
+      abortController: ref(new AbortController()),
+      currentDirectory: ref(null),
+      clientInstance: ref(null)
+    }
+  }
+  return sharedState
+}
+
 export function useOpencode() {
   const projectStore = useProjectStore()
   // Use shared events instance if available (set by chat store)
   // Otherwise create a new one (fallback)
   const events = sharedEvents || useOpencodeEvents()
-  const abortController = ref(new AbortController())
-  const currentDirectory = ref(null)
-  const clientInstance = ref(null)
+  
+  // Get shared state - this ensures all stores use the same sessionId
+  const state = getSharedState()
+  const { sessionId, loading, error, abortController, currentDirectory, clientInstance } = state
   
   // Create client once and only recreate when directory changes
   const getClient = () => {
@@ -59,10 +79,6 @@ export function useOpencode() {
       abortController.value.abort()
     }
   })
-
-  const sessionId = ref(null)
-  const loading = ref(false)
-  const error = ref(null)
 
   /**
    * Create a new chat session
@@ -494,11 +510,89 @@ export function useOpencode() {
     }
   }
 
+  /**
+   * Update session properties (e.g., title)
+   */
+  async function updateSession(sessionIdParam, updates) {
+    try {
+      console.log('[useOpencode] Updating session', sessionIdParam, 'with:', updates)
+      const result = await client.value.session.update({
+        path: { id: sessionIdParam },
+        body: updates
+      })
+      console.log('[useOpencode] Session updated:', result.data)
+      return result.data || null
+    } catch (err) {
+      error.value = err.message
+      console.error('[useOpencode] Update session error:', err)
+      return null
+    }
+  }
+
+  /**
+   * Rename a session using AI to generate a title from conversation
+   * This sends a message to the AI asking it to summarize the conversation
+   */
+  async function renameSessionWithAI(sessionIdParam) {
+    try {
+      console.log('[useOpencode] Generating AI title for session:', sessionIdParam)
+      
+      // Get messages from the session
+      const messages = await getMessages(100, sessionIdParam)
+      if (!messages || messages.length === 0) {
+        console.log('[useOpencode] No messages in session, using default title')
+        return await updateSession(sessionIdParam, { title: 'New Chat' })
+      }
+      
+      // Get first user message to base title on
+      const firstUserMessage = messages.find(msg => msg.info?.role === 'user')
+      if (!firstUserMessage) {
+        console.log('[useOpencode] No user message found, using default title')
+        return await updateSession(sessionIdParam, { title: 'New Chat' })
+      }
+      
+      // Extract text from the first user message
+      const firstMessageText = firstUserMessage.parts
+        ?.filter(part => part.type === 'text')
+        ?.map(part => part.text)
+        ?.join(' ') || ''
+      
+      if (!firstMessageText) {
+        return await updateSession(sessionIdParam, { title: 'New Chat' })
+      }
+      
+      // Generate a short title (max 50 chars) from first message
+      let title = firstMessageText.trim()
+      
+      // Truncate if too long
+      if (title.length > 50) {
+        title = title.substring(0, 47) + '...'
+      }
+      
+      // Clean up the title (remove newlines, extra spaces)
+      title = title.replace(/\s+/g, ' ').trim()
+      
+      // If title is empty after cleanup, use default
+      if (!title) {
+        title = 'New Chat'
+      }
+      
+      console.log('[useOpencode] Generated title:', title)
+      
+      // Update the session with the new title
+      return await updateSession(sessionIdParam, { title })
+    } catch (err) {
+      error.value = err.message
+      console.error('[useOpencode] Rename session with AI error:', err)
+      return null
+    }
+  }
+
   return {
     client,
-    sessionId: computed(() => sessionId.value),
-    loading: computed(() => loading.value),
-    error: computed(() => error.value),
+    sessionId,
+    loading,
+    error,
     createSession,
     sendMessage,
     getMessages,
@@ -512,6 +606,8 @@ export function useOpencode() {
     listSessions,
     getSession,
     switchSession,
-    deleteSession
+    deleteSession,
+    updateSession,
+    renameSessionWithAI
   }
 }
