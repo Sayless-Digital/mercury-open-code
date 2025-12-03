@@ -23,42 +23,60 @@
           @file-selected="handleFileSelected"
         />
         <ChatPanel v-else-if="layoutOrder.left === 'agent'" />
-        <div v-else-if="layoutOrder.left === 'editor'" class="editor-wrapper-in-column">
-          <div class="editor-header" v-if="projectStore.openFiles.length > 0">
-            <div 
-              v-for="file in projectStore.openFiles" 
-              :key="file"
-              class="tab"
-              :class="{ active: file === projectStore.activeFile }"
-              @click="projectStore.setActiveFile(file)"
-            >
-              <component :is="getFileIcon(file)" class="tab-icon" :size="12" />
-              <span class="tab-label">{{ getFileName(file) }}</span>
-              <button 
-                class="tab-close"
-                @click.stop="projectStore.closeFile(file)"
+        <div v-else-if="layoutOrder.left === 'editor'" class="editor-git-split">
+          <!-- Editor section (top half) -->
+          <div class="editor-wrapper-in-column" :style="{ height: leftEditorHeight + 'px', flexShrink: 0 }">
+            <div class="editor-header" v-if="projectStore.openFiles.length > 0">
+              <div 
+                v-for="file in projectStore.openFiles" 
+                :key="file"
+                class="tab"
+                :class="{ active: file === projectStore.activeFile }"
+                @click="projectStore.setActiveFile(file)"
               >
-                <X :size="12" />
-              </button>
-            </div>
-          </div>
-          <div class="editor-header" v-else>
-            <div class="empty-header-placeholder"></div>
-          </div>
-          <CodeEditor 
-            class="code-editor" 
-            :file-path="projectStore.activeFile"
-            v-if="projectStore.activeFile"
-          />
-          <div v-else class="empty-editor">
-            <div class="empty-editor-content">
-              <div class="app-logo">
-                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
-                  <circle cx="40" cy="40" r="30" stroke="currentColor" stroke-width="6"/>
-                  <circle cx="40" cy="40" r="14" stroke="currentColor" stroke-width="6"/>
-                </svg>
+                <component :is="getFileIcon(file)" class="tab-icon" :size="12" />
+                <span class="tab-label">{{ getFileName(file) }}</span>
+                <button 
+                  class="tab-close"
+                  @click.stop="projectStore.closeFile(file)"
+                >
+                  <X :size="12" />
+                </button>
               </div>
             </div>
+            <div class="editor-header" v-else>
+              <div class="empty-header-placeholder"></div>
+            </div>
+            <CodeEditor 
+              class="code-editor" 
+              :file-path="projectStore.activeFile"
+              v-if="projectStore.activeFile"
+            />
+            <div v-else class="empty-editor">
+              <div class="empty-editor-content">
+                <div class="app-logo">
+                  <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+                    <circle cx="40" cy="40" r="30" stroke="currentColor" stroke-width="6"/>
+                    <circle cx="40" cy="40" r="14" stroke="currentColor" stroke-width="6"/>
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Resize handle between editor and git manager -->
+          <div 
+            class="resize-handle-vertical"
+            @mousedown="(e) => startResize('left-vertical', e)"
+            @dblclick="resetLeftEditorHeight"
+          ></div>
+          
+          <!-- Git Manager section (bottom half) -->
+          <div class="git-manager-wrapper" :style="{ height: `calc(100% - ${leftEditorHeight}px - 4px)`, flexShrink: 0 }">
+            <GitManager 
+              class="git-manager" 
+              :project-path="projectStore.currentProject?.path"
+            />
           </div>
         </div>
         <div v-else-if="layoutOrder.left === 'terminal'" class="terminal-wrapper-in-column" :style="{ height: '100%' }">
@@ -379,6 +397,7 @@ import FileManager from './FileManager.vue';
 import CodeEditor from './CodeEditor.vue';
 import Terminal from './Terminal.vue';
 import ChatPanel from './ChatPanel.vue';
+import GitManager from './GitManager.vue';
 import { useProjectStore } from '@/stores/project';
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts';
 
@@ -388,10 +407,12 @@ const projectStore = useProjectStore();
 const DEFAULT_LEFT_WIDTH = 360;
 const DEFAULT_RIGHT_WIDTH = 360;
 const DEFAULT_TERMINAL_HEIGHT = 300;
+const DEFAULT_LEFT_EDITOR_HEIGHT = 300;
 
 const leftColumnWidth = ref(DEFAULT_LEFT_WIDTH);
 const rightColumnWidth = ref(DEFAULT_RIGHT_WIDTH);
 const terminalHeight = ref(DEFAULT_TERMINAL_HEIGHT);
+const leftEditorHeight = ref(DEFAULT_LEFT_EDITOR_HEIGHT);
 const isResizing = ref(false);
 const resizeType = ref(null);
 const startX = ref(0);
@@ -399,6 +420,7 @@ const startY = ref(0);
 const startLeftWidth = ref(0);
 const startRightWidth = ref(0);
 const startTerminalHeight = ref(0);
+const startLeftEditorHeight = ref(0);
 
 // Drag and drop functionality
 const isDragging = ref(null);
@@ -506,6 +528,10 @@ function resetTerminalHeight() {
   terminalHeight.value = DEFAULT_TERMINAL_HEIGHT;
 }
 
+function resetLeftEditorHeight() {
+  leftEditorHeight.value = DEFAULT_LEFT_EDITOR_HEIGHT;
+}
+
 function resetLayoutArrangement() {
   layoutOrder.value = {
     left: 'file-manager',
@@ -529,6 +555,7 @@ function startResize(type, e) {
   startLeftWidth.value = leftColumnWidth.value;
   startRightWidth.value = rightColumnWidth.value;
   startTerminalHeight.value = terminalHeight.value;
+  startLeftEditorHeight.value = leftEditorHeight.value;
 }
 
 function handleMouseMove(e) {
@@ -556,6 +583,12 @@ function handleMouseMove(e) {
     if (newHeight >= 200 && newHeight <= 800) {
       terminalHeight.value = newHeight;
     }
+  } else if (resizeType.value === 'left-vertical') {
+    // Resize left editor height (vertical split in left column)
+    const newHeight = startLeftEditorHeight.value + deltaY;
+    if (newHeight >= 200 && newHeight <= 800) {
+      leftEditorHeight.value = newHeight;
+    }
   }
 }
 
@@ -570,13 +603,27 @@ onMounted(() => {
   document.addEventListener('mousemove', handleMouseMove);
   document.addEventListener('mouseup', handleMouseUp);
   
+  // Calculate default left editor height as half of viewport (minus title bar and padding)
+  const viewportHeight = window.innerHeight;
+  const titleBarHeight = 48; // Approximate title bar height
+  const padding = 32; // Total padding
+  const availableHeight = viewportHeight - titleBarHeight - padding;
+  const calculatedDefaultHeight = Math.floor(availableHeight / 2);
+  
   // Load saved widths and heights from localStorage
   const savedLeftWidth = localStorage.getItem('mercury-left-column-width');
   const savedRightWidth = localStorage.getItem('mercury-right-column-width');
   const savedTerminalHeight = localStorage.getItem('mercury-terminal-height');
+  const savedLeftEditorHeight = localStorage.getItem('mercury-left-editor-height');
   if (savedLeftWidth) leftColumnWidth.value = parseInt(savedLeftWidth);
   if (savedRightWidth) rightColumnWidth.value = parseInt(savedRightWidth);
   if (savedTerminalHeight) terminalHeight.value = parseInt(savedTerminalHeight);
+  if (savedLeftEditorHeight) {
+    leftEditorHeight.value = parseInt(savedLeftEditorHeight);
+  } else {
+    // Set to calculated default if not saved
+    leftEditorHeight.value = calculatedDefaultHeight;
+  }
   
   // Load saved layout order
   const savedLayoutOrder = localStorage.getItem('mercury-layout-order');
@@ -595,10 +642,11 @@ onUnmounted(() => {
 });
 
 // Save widths and height to localStorage when they change
-watch([leftColumnWidth, rightColumnWidth, terminalHeight], ([left, right, height]) => {
+watch([leftColumnWidth, rightColumnWidth, terminalHeight, leftEditorHeight], ([left, right, height, leftEditor]) => {
   localStorage.setItem('mercury-left-column-width', left.toString());
   localStorage.setItem('mercury-right-column-width', right.toString());
   localStorage.setItem('mercury-terminal-height', height.toString());
+  localStorage.setItem('mercury-left-editor-height', leftEditor.toString());
 });
 
 // Initialize keyboard shortcuts
@@ -990,6 +1038,21 @@ const getFileIcon = (filePath) => {
 
 .app-container.resizing[data-resize-type="vertical"] * {
   cursor: row-resize !important;
+}
+
+.editor-git-split {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.git-manager-wrapper {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .resize-handle-vertical {

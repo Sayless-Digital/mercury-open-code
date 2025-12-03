@@ -84,5 +84,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Mercury Coder global config operations
   getMercuryConfigDir: () => ipcRenderer.invoke('get-mercury-config-dir'),
   writeMercuryConfig: (configData) => ipcRenderer.invoke('write-mercury-config', configData),
+  
+  // Execute command synchronously
+  executeCommand: (options) => ipcRenderer.invoke('execute-command', options),
 });
 

@@ -38,7 +38,7 @@ export const useSessionStore = defineStore('session', () => {
         timestamp: Date.now()
       }
       localStorage.setItem(key, JSON.stringify(state))
-      console.log('[SessionStore] Saved session state for project:', projectStore.currentProject?.path)
+      // Removed logging - state saves happen frequently
     } catch (err) {
       console.warn('[SessionStore] Failed to save session state:', err)
     }
@@ -56,7 +56,7 @@ export const useSessionStore = defineStore('session', () => {
       if (!stored) return null
       
       const state = JSON.parse(stored)
-      console.log('[SessionStore] Loaded session state for project:', projectStore.currentProject?.path, state)
+      // Removed logging - state loads happen frequently
       return state
     } catch (err) {
       console.warn('[SessionStore] Failed to load session state:', err)
@@ -117,12 +117,11 @@ export const useSessionStore = defineStore('session', () => {
         if (validOpenedSessions.length > 0) {
           // Restore opened sessions
           openedSessions.value = validOpenedSessions
-          console.log('[SessionStore] Restored', validOpenedSessions.length, 'opened sessions')
           
           // Restore active session if it's still valid
           if (validActiveSession) {
             await switchSession(persistedState.activeSessionId)
-            console.log('[SessionStore] Restored active session:', persistedState.activeSessionId)
+            // Removed logging - restoration happens frequently
             return sessions.value
           } else if (validOpenedSessions.length > 0) {
             // Active session is gone, but we have opened sessions - use first one
@@ -221,7 +220,10 @@ export const useSessionStore = defineStore('session', () => {
         throw new Error(`Session ${sessionId} not found`)
       }
       
-      console.log('[SessionStore] Switching to session:', sessionId)
+      // Only log if actually switching to a different session
+      if (activeSessionId.value !== sessionId) {
+        console.log('[SessionStore] Switching to session:', sessionId)
+      }
       
       // Update active session FIRST
       activeSessionId.value = sessionId
@@ -246,7 +248,7 @@ export const useSessionStore = defineStore('session', () => {
       // Save state after switching
       saveSessionState()
       
-      console.log('[SessionStore] Session switched successfully to:', sessionId)
+      // Removed success log - happens too frequently
       
       return true
     } catch (err) {

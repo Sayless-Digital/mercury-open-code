@@ -262,16 +262,26 @@
                   </template>
                 </div>
                 
-                    <!-- Status indicator for incomplete messages -->
-                    <div v-if="!assistantMsg.info.finish" class="status-indicator">
+                    <!-- Status indicator for incomplete messages (but not if aborted) -->
+                    <div v-if="!assistantMsg.info.finish && assistantMsg.info.error?.name !== 'MessageAbortedError'" class="status-indicator">
                       <RefreshCw :size="16" class="status-spinner" />
                       <span class="status-text shimmer-text">{{ getStatusText(turn, assistantMsg) }}</span>
                     </div>
+                    
+                    <!-- Aborted indicator (subtle, not an error) -->
+                    <div v-if="assistantMsg.info.error?.name === 'MessageAbortedError' && !assistantMsg.info.finish" class="status-indicator status-aborted">
+                      <span class="status-text">Interrupted</span>
+                    </div>
                 
                 <!-- Error display -->
-                <div v-if="assistantMsg.info.error" class="message-error">
+                <div v-if="assistantMsg.info.error" class="message-error" :class="{ 'message-aborted': assistantMsg.info.error?.name === 'MessageAbortedError' }">
                   <div class="error-content">
-                    {{ assistantMsg.info.error?.message || 'An error occurred' }}
+                    <span v-if="assistantMsg.info.error?.name === 'MessageAbortedError'">
+                      Message interrupted
+                    </span>
+                    <span v-else>
+                      {{ assistantMsg.info.error?.message || assistantMsg.info.error?.data?.message || 'An error occurred' }}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -328,7 +338,7 @@
         </div>
         <div class="action-buttons">
           <button
-            v-if="!autoRecordMode && !isRecording"
+            v-if="!autoRecordMode && !isRecording && !loading"
             class="voice-button"
             @click="toggleRecording"
             :disabled="loading"
@@ -380,8 +390,19 @@
               <ArrowUp :size="14" fill="currentColor" />
           </button>
         </template>
+        <!-- Interrupt button - shows when loading (prominent position) -->
         <button
-          v-else-if="!autoRecordMode"
+          v-if="loading && !isRecording"
+          class="interrupt-button"
+          :class="{ 'interrupt-active': interruptCount > 0 }"
+          @click="chatStore.interruptSession()"
+          :title="interruptCount > 0 ? 'Press again to abort' : 'Interrupt session (Esc)'"
+        >
+          <X :size="16" fill="currentColor" />
+          <span v-if="interruptCount > 0" class="interrupt-badge">{{ interruptCount }}</span>
+        </button>
+        <button
+          v-else-if="!autoRecordMode && !loading"
           class="voice-button voice-button-inline"
           @click="startRecordingAtCursor"
           :disabled="loading"
@@ -403,7 +424,7 @@ import { marked } from 'marked';
 import {
   Mic, Square, Send, Loader2, Eraser, Brain, RefreshCw, ChevronDown, FileText, CheckSquare,
   Search, FileEdit, FilePlus, FolderOpen, Globe, Terminal, ListTodo, ArrowUp, ChevronUp,
-  Hammer, ClipboardList, Building, Wrench, History
+  Hammer, ClipboardList, Building, Wrench, History, X
 } from 'lucide-vue-next';
 import { useChatStore } from '@/stores/chat';
 import { useProjectStore } from '@/stores/project';
@@ -426,6 +447,7 @@ const turns = computed(() => chatStore.turns); // New turn-based structure
 const loading = computed(() => chatStore.loading);
 const error = computed(() => chatStore.error);
 const autoRecordMode = computed(() => settingsStore.autoRecordMode);
+const interruptCount = computed(() => chatStore.interruptCount);
 const whisperModelId = computed(() => settingsStore.whisperModelId);
 const workflowState = computed(() => chatStore.workflowState);
 
@@ -573,6 +595,14 @@ const handleKeyDown = async (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     sendMessage();
+    return;
+  }
+  
+  // Handle Escape key for interrupt (like OpenCode TUI)
+  if (e.key === 'Escape' && loading.value) {
+    e.preventDefault();
+    chatStore.interruptSession();
+    return;
   }
 };
 
@@ -1661,7 +1691,26 @@ const processChunk = async (isFinal = false) => {
   }
 };
 
+// Global Escape key listener for interrupt (works even when input is not focused)
+const handleGlobalKeyDown = (e) => {
+  // Only handle Escape when loading and not in a form input
+  if (e.key === 'Escape' && loading.value && !isRecording.value) {
+    const target = e.target;
+    // Don't interrupt if user is typing in an input/textarea
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+      return;
+    }
+    e.preventDefault();
+    chatStore.interruptSession();
+  }
+};
+
+onMounted(() => {
+  window.addEventListener('keydown', handleGlobalKeyDown);
+});
+
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleGlobalKeyDown);
   if (isRecording.value) {
     stopRecording();
   }
@@ -2558,6 +2607,12 @@ onBeforeUnmount(() => {
   margin-top: var(--space-2);
 }
 
+.message-error.message-aborted {
+  background: var(--muted);
+  color: var(--muted-foreground);
+  border: 1px solid var(--border);
+}
+
 .error-content {
   font-size: var(--text-sm);
 }
@@ -2645,6 +2700,15 @@ onBeforeUnmount(() => {
   margin-top: var(--space-2);
   margin-bottom: var(--space-4);
   padding-top: var(--space-2);
+}
+
+.status-indicator.status-aborted {
+  opacity: 0.6;
+}
+
+.status-indicator.status-aborted .status-text {
+  color: var(--muted-foreground);
+  font-style: italic;
 }
 
 .typing-dot {
@@ -2820,6 +2884,70 @@ onBeforeUnmount(() => {
 .stop-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.interrupt-button {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  background: var(--muted);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  position: relative;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.interrupt-button:hover:not(:disabled) {
+  background: var(--muted-hover);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.interrupt-button.interrupt-active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  animation: interrupt-pulse 0.5s ease-in-out;
+}
+
+.interrupt-button.interrupt-active:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.interrupt-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  border: 2px solid var(--background);
+}
+
+@keyframes interrupt-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
 }
 
 .send-button {

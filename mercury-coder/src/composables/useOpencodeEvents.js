@@ -81,14 +81,17 @@ export function useOpencodeEvents() {
       let eventCount = 0
       for await (const event of stream) {
         eventCount++
-        console.log(`[useOpencodeEvents] Received event #${eventCount}:`, event)
+        // Removed event logging - was causing thousands of logs
         events.value.push(event)
         handleEvent(event)
         
         if (abortController.signal.aborted) break
       }
       
-      console.log('[useOpencodeEvents] Stream ended after', eventCount, 'events')
+      // Only log stream end if there was an error or it's significant
+      if (eventCount > 0 && abortController.signal.aborted) {
+        console.log('[useOpencodeEvents] Stream ended after', eventCount, 'events (aborted)')
+      }
     } catch (err) {
       if (err.name !== 'AbortError') {
         console.error('[useOpencodeEvents] Stream error:', err)
@@ -101,15 +104,16 @@ export function useOpencodeEvents() {
    * Handle individual event
    */
   function handleEvent(event) {
-    console.log('[useOpencodeEvents] Full event object:', JSON.stringify(event, null, 2))
-    console.log('[useOpencodeEvents] Event keys:', Object.keys(event))
+    // Commented out excessive logging - these fire continuously
+    // console.log('[useOpencodeEvents] Full event object:', JSON.stringify(event, null, 2))
+    // console.log('[useOpencodeEvents] Event keys:', Object.keys(event))
     
     // OpenCode wraps events with { directory, payload: { type, properties } }
     const payload = event.payload || event
     const eventType = payload.type
     const properties = payload.properties
     
-    console.log('[useOpencodeEvents] Event type:', eventType, 'Properties:', properties)
+    // console.log('[useOpencodeEvents] Event type:', eventType, 'Properties:', properties)
     
     switch (eventType) {
       case 'server.connected':
@@ -126,7 +130,7 @@ export function useOpencodeEvents() {
             info,
             parts: existing.parts
           })
-          console.log('[useOpencodeEvents] Message updated:', info.role, info.id)
+          // console.log('[useOpencodeEvents] Message updated:', info.role, info.id)
         } else {
           console.warn('[useOpencodeEvents] Invalid message.updated event:', event)
         }
@@ -148,7 +152,7 @@ export function useOpencodeEvents() {
           }
           
           messages.value.set(messageId, existing)
-          console.log('[useOpencodeEvents] Part updated:', part.type, 'in message', messageId)
+          // console.log('[useOpencodeEvents] Part updated:', part.type, 'in message', messageId)
         } else {
           console.warn('[useOpencodeEvents] Invalid message.part.updated event:', event)
         }
@@ -196,26 +200,18 @@ export function useOpencodeEvents() {
         break
         
       case 'session.updated':
-        // Session state events
-        console.log('[OpenCode] Session event: session.updated')
+        // Session state events - don't log, too frequent
         break
         
       case 'session.status':
         // Session status: busy, idle, retry, etc.
-        if (properties?.status) {
-          const statusType = properties.status.type
-          console.log('[OpenCode] Session status:', statusType)
-          // Update loading state based on session status
-          // This will be handled by the chat store if needed
-        }
+        // Don't log every status change - it's too frequent
+        // The chat store will handle status updates via watchers
         break
         
       case 'session.idle':
         // Session is idle - processing complete
-        console.log('[OpenCode] Session idle - processing complete')
-        // Emit a custom event that the chat store can listen to
-        // This ensures loading state is cleared when session completes
-        // The chat store will handle this via the watch on latestSessionStatus
+        // Don't log - chat store handles this via watchers
         break
         
       default:

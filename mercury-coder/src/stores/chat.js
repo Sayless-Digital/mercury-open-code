@@ -25,31 +25,21 @@ export const useChatStore = defineStore('chat', () => {
   const error = computed(() => opencode.error.value)
   const sessionId = computed(() => opencode.sessionId.value)
   
+  // Interrupt state - tracks how many times interrupt was pressed (like TUI)
+  const interruptCount = ref(0)
+  let interruptTimeout = null
+  
   // Organize messages into "turns" (user message + assistant response)
   // Similar to OpenCode's SessionTurn structure
   const turns = computed(() => {
     const currentSessionId = sessionId.value
     if (!currentSessionId) {
-      console.log('[ChatStore] No session ID, returning empty turns')
       return []
     }
     
     // Filter messages by current session ID
     const allMessages = Array.from(messageMap.value.values())
       .filter(msg => msg.info?.sessionID === currentSessionId)
-    
-    console.log('[ChatStore] Computing turns from', allMessages.length, 'messages for session', currentSessionId)
-    
-    // Log all messages for debugging
-    allMessages.forEach(msg => {
-      console.log('[ChatStore] Message:', {
-        id: msg.info?.id,
-        role: msg.info?.role,
-        sessionID: msg.info?.sessionID,
-        parentID: msg.info?.parentID,
-        partsCount: msg.parts?.length || 0
-      })
-    })
     
     const userMessages = allMessages
       .filter(m => m.info?.role === 'user')
@@ -59,22 +49,12 @@ export const useChatStore = defineStore('chat', () => {
         return timeA - timeB
       })
     
-    console.log('[ChatStore] Found', userMessages.length, 'user messages for session', currentSessionId)
-    
     const turnsResult = userMessages.map(userMsg => {
       // Find assistant messages that are children of this user message
       const assistantMessages = allMessages
         .filter(m => {
           const isAssistant = m.info?.role === 'assistant'
           const hasParentID = m.info?.parentID === userMsg.info.id
-          if (isAssistant) {
-            console.log('[ChatStore] Checking assistant message:', {
-              id: m.info.id,
-              parentID: m.info.parentID,
-              userMsgId: userMsg.info.id,
-              matches: hasParentID
-            })
-          }
           return isAssistant && hasParentID
         })
         .sort((a, b) => {
@@ -82,8 +62,6 @@ export const useChatStore = defineStore('chat', () => {
           const timeB = b.info?.time?.created || 0
           return timeA - timeB
         })
-      
-      console.log('[ChatStore] Turn for user message', userMsg.info.id, 'has', assistantMessages.length, 'assistant messages')
       
       return {
         id: userMsg.info.id,
@@ -93,7 +71,6 @@ export const useChatStore = defineStore('chat', () => {
       }
     })
     
-    console.log('[ChatStore] Computed', turnsResult.length, 'turns for session', currentSessionId)
     return turnsResult
   })
   
@@ -111,7 +88,6 @@ export const useChatStore = defineStore('chat', () => {
   
   // Subscribe to global events immediately to catch all events
   // This ensures we don't miss events that arrive before session-specific subscription
-  console.log('[ChatStore] Subscribing to global events')
   events.subscribe() // Global subscription (no session filter)
   
   /**
@@ -121,32 +97,17 @@ export const useChatStore = defineStore('chat', () => {
   function syncMessagesFromEvents() {
     const currentSessionId = opencode.sessionId.value
     if (!currentSessionId) {
-      console.log('[ChatStore] No current session ID, skipping message sync')
       return
     }
     
     const newMessageMap = events.messages.value
-    console.log('[ChatStore] Syncing messages from events:', newMessageMap.size, 'for session:', currentSessionId)
     
     // Filter messages by current sessionID BEFORE copying to messageMap
     // This ensures messageMap only contains messages for the current session
-    let addedCount = 0
-    let removedCount = 0
-    
     newMessageMap.forEach((msg, messageId) => {
       // Only add messages that belong to the current session
       if (msg.info?.sessionID === currentSessionId) {
-        if (!messageMap.value.has(messageId)) {
-          console.log('[ChatStore] Adding message to map:', {
-            id: messageId,
-            role: msg.info?.role,
-            sessionID: msg.info?.sessionID,
-            parentID: msg.info?.parentID,
-            partsCount: msg.parts?.length || 0
-          })
-        }
         messageMap.value.set(messageId, msg)
-        addedCount++
       }
     })
     
@@ -159,37 +120,42 @@ export const useChatStore = defineStore('chat', () => {
     for (const [messageId, msg] of messageMap.value.entries()) {
       if (msg.info?.sessionID !== currentSessionId) {
         messageMap.value.delete(messageId)
-        removedCount++
-        console.log('[ChatStore] Removed message from map (wrong session):', messageId)
       }
     }
     
-    console.log('[ChatStore] Synced messages: added', addedCount, 'removed', removedCount, 'for session', currentSessionId)
-    
-    // Check if we got any assistant messages to clear loading
+    // DON'T clear loading here - let session.status events handle that
+    // Loading should stay true while session is busy, not just when assistant message arrives
+    // The session can be busy even after assistant message starts (e.g., tools executing)
     const assistantMessages = Array.from(messageMap.value.values())
       .filter(msg => msg.info?.role === 'assistant' && msg.info?.sessionID === currentSessionId)
     
-    console.log('[ChatStore] Found', assistantMessages.length, 'assistant messages in current session')
-    
+    // Auto-name session if this is the first assistant message (indicating first complete turn)
     if (assistantMessages.length > 0) {
-      console.log('[ChatStore] Assistant message received, clearing loading state')
-      assistantMessages.forEach(msg => {
-        console.log('[ChatStore] Assistant message details:', {
-          id: msg.info.id,
-          parentID: msg.info.parentID,
-          partsCount: msg.parts?.length || 0
-        })
-      })
-      internalLoading.value = false
-      // Also clear opencode.loading to ensure input is enabled
-      if (opencode.clearLoading) {
-        opencode.clearLoading()
+      // Auto-name session if this is the first assistant message (indicating first complete turn)
+      const userMessages = Array.from(messageMap.value.values())
+        .filter(msg => msg.info?.role === 'user' && msg.info?.sessionID === currentSessionId)
+      
+      if (userMessages.length === 1 && assistantMessages.length === 1) {
+        // This is the first complete turn - auto-name the session
+        setTimeout(async () => {
+          try {
+            await opencode.renameSessionWithAI(currentSessionId)
+            
+            // Trigger session list refresh to update UI
+            try {
+              const { useSessionStore } = await import('./session')
+              const sessionStore = useSessionStore()
+              await sessionStore.loadSessions()
+            } catch (err) {
+              console.warn('[ChatStore] Could not refresh session list:', err)
+            }
+          } catch (err) {
+            console.warn('[ChatStore] Failed to auto-name session:', err)
+            // Non-critical, don't throw
+          }
+        }, 1000) // Wait 1 second to ensure message is fully saved
       }
     }
-    
-    console.log('[ChatStore] Total messages in map:', messageMap.value.size, 'for session', currentSessionId)
-    console.log('[ChatStore] Total turns:', turns.value.length)
   }
 
   // Track the current loading session to handle race conditions
@@ -199,18 +165,19 @@ export const useChatStore = defineStore('chat', () => {
   // Following OpenCode's pattern: sync.session.sync(sessionID) loads messages, then events handle updates
   // Watch opencode.sessionId directly - it's a computed ref, so watch it as a source
   watch(opencode.sessionId, async (newSessionId, oldSessionId) => {
-    console.log('[ChatStore] ======================================')
-    console.log('[ChatStore] SESSION WATCH TRIGGERED')
-    console.log('[ChatStore] New session:', newSessionId)
-    console.log('[ChatStore] Old session:', oldSessionId)
-    console.log('[ChatStore] ======================================')
+    // Reduced logging spam - commented out verbose session switch logs
+    // console.log('[ChatStore] ======================================')
+    // console.log('[ChatStore] SESSION WATCH TRIGGERED')
+    // console.log('[ChatStore] New session:', newSessionId)
+    // console.log('[ChatStore] Old session:', oldSessionId)
+    // console.log('[ChatStore] ======================================')
     
     if (newSessionId && newSessionId !== oldSessionId) {
-      console.log('[ChatStore] Session changed from', oldSessionId, 'to', newSessionId)
+      // console.log('[ChatStore] Session changed from', oldSessionId, 'to', newSessionId)
       
       // DON'T clear messageMap - keep all messages for all sessions
       // The turns computed property will filter by sessionID
-      console.log('[ChatStore] Keeping existing messages in messageMap (', messageMap.value.size, 'messages)')
+      // console.log('[ChatStore] Keeping existing messages in messageMap (', messageMap.value.size, 'messages)')
       
       // Mark that we're loading this session (for race condition handling)
       loadingSessionId = newSessionId
@@ -221,7 +188,7 @@ export const useChatStore = defineStore('chat', () => {
       
       // Check if we've already loaded messages for this session
       if (loadedSessions.value.has(targetSessionId)) {
-        console.log('[ChatStore] Session', targetSessionId, 'already loaded, skipping API call')
+        // console.log('[ChatStore] Session', targetSessionId, 'already loaded, skipping API call')
         // Just sync from events in case there are new messages
         syncMessagesFromEvents()
         return
@@ -230,13 +197,13 @@ export const useChatStore = defineStore('chat', () => {
       // Load existing messages from API (like OpenCode's sync.session.sync)
       // This ensures we have historical messages, not just new events
       try {
-        console.log('[ChatStore] Loading messages from API for session:', targetSessionId)
+        // console.log('[ChatStore] Loading messages from API for session:', targetSessionId)
         const apiMessages = await opencode.getMessages(100, targetSessionId)
-        console.log('[ChatStore] Loaded', apiMessages.length, 'messages from API for session', targetSessionId)
+        // console.log('[ChatStore] Loaded', apiMessages.length, 'messages from API for session', targetSessionId)
         
         // Check if session switched again during load (race condition)
         if (opencode.sessionId.value !== targetSessionId) {
-          console.log('[ChatStore] Session switched during load, but keeping results for', targetSessionId, 'in cache')
+          // console.log('[ChatStore] Session switched during load, but keeping results for', targetSessionId, 'in cache')
           // Continue processing - we want to cache these messages even if user switched away
         }
         
@@ -363,10 +330,49 @@ export const useChatStore = defineStore('chat', () => {
         opencode.clearLoading()
       }
     } else if (status === 'busy') {
-      // Don't set loading to true here - it's already set when sending a message
-      // This is just for tracking
+      // Keep loading true when session is busy (AI is working)
+      console.log('[ChatStore] Session is busy, keeping loading state')
+      internalLoading.value = true
+      // Also ensure opencode.loading is true
+      if (!opencode.loading.value) {
+        // Set it via the composable if there's a way, or just track it
+        // The opencode.loading should be managed by the session status
+      }
     }
   }, { immediate: true })
+  
+  // Also watch for session.status events directly to catch busy state
+  watch(() => events.events.value, (eventList) => {
+    // Find the most recent session.status event
+    for (let i = eventList.length - 1; i >= 0; i--) {
+      const event = eventList[i]
+      const payload = event?.payload
+      if (payload?.type === 'session.status' && payload?.properties?.status) {
+        const statusType = payload.properties.status.type
+        if (statusType === 'busy') {
+          console.log('[ChatStore] Detected session.status busy event, setting loading')
+          internalLoading.value = true
+          break
+        } else if (statusType === 'idle') {
+          console.log('[ChatStore] Detected session.status idle event, clearing loading')
+          internalLoading.value = false
+          if (opencode.clearLoading) {
+            opencode.clearLoading()
+          }
+          break
+        }
+      }
+      // Also check for session.error events (abort triggers this)
+      if (payload?.type === 'session.error') {
+        console.log('[ChatStore] Detected session.error event, clearing loading')
+        internalLoading.value = false
+        if (opencode.clearLoading) {
+          opencode.clearLoading()
+        }
+        break
+      }
+    }
+  }, { deep: true })
   
   /**
    * Transform OpenCode message format to UI format
@@ -377,19 +383,29 @@ export const useChatStore = defineStore('chat', () => {
       return null
     }
     
-    // Log assistant messages, especially if they have errors
+    // Handle assistant messages - only log errors or first-time transformations
     if (opencodeMsg.info.role === 'assistant') {
-      console.log('[ChatStore] Transforming assistant message:', {
-        id: opencodeMsg.info.id,
-        hasError: !!opencodeMsg.info.error,
-        error: opencodeMsg.info.error,
-        partsCount: opencodeMsg.parts?.length || 0,
-        finish: opencodeMsg.info.finish
-      })
+      const hasError = !!opencodeMsg.info.error
+      const isAborted = opencodeMsg.info.error?.name === 'MessageAbortedError'
       
-      if (opencodeMsg.info.error) {
+      // Only log actual errors (not aborted messages - those are expected)
+      if (hasError && !isAborted) {
         console.error('[ChatStore] Assistant message has error:', opencodeMsg.info.error)
+      } else if (isAborted) {
+        // Aborted messages are expected when user interrupts - don't log them
+        // Mark message as finished when aborted (so status indicators stop)
+        // Use a special finish value to indicate it was aborted
+        if (opencodeMsg.info.finish === undefined) {
+          // Set finish to a truthy value so the status indicator stops
+          opencodeMsg.info.finish = 'aborted'
+        }
+        // Clear loading state when message is aborted
+        internalLoading.value = false
+        if (opencode.clearLoading) {
+          opencode.clearLoading()
+        }
       }
+      // Removed the general log for every transformation - it was causing thousands of logs
     }
     
     return {
@@ -440,13 +456,6 @@ export const useChatStore = defineStore('chat', () => {
     if (!text.trim()) return
     
     try {
-      // Check if this is the first message in the session (for auto-naming)
-      const currentSessionId = opencode.sessionId.value
-      const messagesInSession = currentSessionId 
-        ? Array.from(messageMap.value.values()).filter(msg => msg.info?.sessionID === currentSessionId)
-        : []
-      const isFirstMessage = messagesInSession.length === 0
-      
       // Set loading state - will be cleared when assistant message arrives or session goes idle
       internalLoading.value = true
       
@@ -460,28 +469,8 @@ export const useChatStore = defineStore('chat', () => {
         noReply: options.noReply || false
       })
       
-      // If this was the first message, auto-rename the session based on the message
-      // Do this after a short delay to ensure the session exists and message is saved
-      if (isFirstMessage && opencode.sessionId.value) {
-        setTimeout(async () => {
-          try {
-            console.log('[ChatStore] Auto-naming session after first message')
-            await opencode.renameSessionWithAI(opencode.sessionId.value)
-            
-            // Trigger session list refresh to update UI
-            try {
-              const { useSessionStore } = await import('./session')
-              const sessionStore = useSessionStore()
-              await sessionStore.loadSessions()
-            } catch (err) {
-              console.warn('[ChatStore] Could not refresh session list:', err)
-            }
-          } catch (err) {
-            console.warn('[ChatStore] Failed to auto-name session:', err)
-            // Non-critical, don't throw
-          }
-        }, 2000) // Wait 2 seconds for message to be saved
-      }
+      // Note: Auto-naming is handled in the syncMessagesFromEvents function
+      // when we detect this is the first user message in a session
       
       // Note: The user and assistant messages will arrive via message.updated and message.part.updated events
       // Loading will be set to false when assistant message arrives or session.idle event fires
@@ -528,6 +517,52 @@ export const useChatStore = defineStore('chat', () => {
   }
   
   /**
+   * Interrupt the current session
+   * Following OpenCode TUI pattern: first press increments counter, second press (within 5s) aborts
+   */
+  async function interruptSession() {
+    if (!sessionId.value) return
+    
+    // Clear any existing timeout
+    if (interruptTimeout) {
+      clearTimeout(interruptTimeout)
+    }
+    
+    // Increment interrupt count
+    interruptCount.value = interruptCount.value + 1
+    
+    console.log('[ChatStore] Interrupt pressed, count:', interruptCount.value)
+    
+    // If interrupted twice (or more), abort the session
+    if (interruptCount.value >= 2) {
+      console.log('[ChatStore] Interrupt count >= 2, aborting session')
+      interruptCount.value = 0
+      try {
+        await opencode.abortSession()
+        // Clear loading state immediately after abort
+        internalLoading.value = false
+        if (opencode.clearLoading) {
+          opencode.clearLoading()
+        }
+      } catch (err) {
+        console.error('[ChatStore] Interrupt abort failed:', err)
+        // Still clear loading even if abort fails
+        internalLoading.value = false
+        if (opencode.clearLoading) {
+          opencode.clearLoading()
+        }
+      }
+      return
+    }
+    
+    // Reset interrupt count after 5 seconds (like TUI)
+    interruptTimeout = setTimeout(() => {
+      interruptCount.value = 0
+      console.log('[ChatStore] Interrupt count reset')
+    }, 5000)
+  }
+  
+  /**
    * Pause workflow (compatibility stub)
    */
   async function pauseWorkflow() {
@@ -559,45 +594,26 @@ export const useChatStore = defineStore('chat', () => {
    * This is called by SessionStore when switching sessions
    */
   async function loadMessagesForSession(sessionId) {
-    console.log('[ChatStore] ======================================')
-    console.log('[ChatStore] loadMessagesForSession called')
-    console.log('[ChatStore] Session ID:', sessionId)
-    console.log('[ChatStore] Current opencode.sessionId.value:', opencode.sessionId.value)
-    console.log('[ChatStore] ======================================')
-    
     if (!sessionId) {
-      console.log('[ChatStore] No session ID provided, skipping load')
       return
     }
     
     // Wait a tick for reactivity to settle
     await nextTick()
-    console.log('[ChatStore] After nextTick, opencode.sessionId.value:', opencode.sessionId.value)
     
     const targetSessionId = sessionId
     
     // Check if we've already loaded this session
     if (loadedSessions.value.has(targetSessionId)) {
-      console.log('[ChatStore] Session', targetSessionId, 'already loaded in cache')
       // Just sync from events and return
       syncMessagesFromEvents()
-      
-      // Log current state
-      const messagesForTarget = Array.from(messageMap.value.values())
-        .filter(msg => msg.info?.sessionID === targetSessionId)
-      console.log('[ChatStore] Found', messagesForTarget.length, 'cached messages for session', targetSessionId)
-      console.log('[ChatStore] Current turns:', turns.value.length)
       return
     }
     
     // DON'T clear messageMap - keep all messages for all sessions
-    console.log('[ChatStore] Keeping existing messages in messageMap (', messageMap.value.size, 'messages)')
-    
-    // Load existing messages from API
-    try {
-      console.log('[ChatStore] Loading messages from API for session:', targetSessionId)
-      const apiMessages = await opencode.getMessages(100, targetSessionId)
-      console.log('[ChatStore] Loaded', apiMessages.length, 'messages from API for session', targetSessionId)
+      // Load existing messages from API
+      try {
+        const apiMessages = await opencode.getMessages(100, targetSessionId)
       
       // Add messages directly to both events.messages and messageMap
       let addedToEvents = 0
@@ -644,31 +660,11 @@ export const useChatStore = defineStore('chat', () => {
         addedToMap++
       })
       
-      console.log('[ChatStore] Added', addedToEvents, 'messages to events.messages and', addedToMap, 'to messageMap for session', targetSessionId)
-      console.log('[ChatStore] messageMap now has', messageMap.value.size, 'total messages (all sessions)')
-      console.log('[ChatStore] events.messages now has', events.messages.value.size, 'messages')
-      
-      // Mark this session as loaded
-      loadedSessions.value.add(targetSessionId)
-      console.log('[ChatStore] Marked session', targetSessionId, 'as loaded')
-      
-      // Verify messages for target session
-      const messagesForTarget = Array.from(messageMap.value.values())
-        .filter(msg => msg.info?.sessionID === targetSessionId)
-      console.log('[ChatStore] Verified', messagesForTarget.length, 'messages belong to target session', targetSessionId)
-      
-      if (messagesForTarget.length > 0) {
-        console.log('[ChatStore] First few messages for', targetSessionId + ':')
-        messagesForTarget.slice(0, 3).forEach(msg => {
-          console.log('  -', msg.info?.id, msg.info?.role)
-        })
-      }
-      
-      // Sync from events
-      syncMessagesFromEvents()
-      
-      // Check turns
-      console.log('[ChatStore] Turns for current session:', turns.value.length)
+        // Mark this session as loaded
+        loadedSessions.value.add(targetSessionId)
+        
+        // Sync from events
+        syncMessagesFromEvents()
       
     } catch (err) {
       console.error('[ChatStore] Failed to load messages from API:', err)
@@ -695,6 +691,8 @@ export const useChatStore = defineStore('chat', () => {
     resumeWorkflow,
     getWorkflowStatus,
     loadMessagesForSession, // For manual session switching
+    interruptSession, // Interrupt running session
+    interruptCount, // Expose interrupt count for UI feedback
     // Expose for advanced usage
     opencode,
     events,

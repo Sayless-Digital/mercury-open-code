@@ -743,6 +743,68 @@ function createWindow() {
     }
     return { success: false, error: 'PTY not found' };
   });
+
+  // Execute command synchronously and return result
+  ipcMain.handle('execute-command', async (event, options) => {
+    const { command, args = [], cwd } = options;
+    
+    if (!command) {
+      return { success: false, error: 'Command is required' };
+    }
+
+    const workingDir = cwd || process.cwd();
+    const envVars = { ...process.env };
+
+    return new Promise((resolve) => {
+      const childProcess = spawn(command, args, {
+        cwd: workingDir,
+        shell: false,
+        env: envVars
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      childProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      childProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      childProcess.on('close', (code) => {
+        resolve({
+          success: code === 0,
+          stdout: stdout.trim(),
+          stderr: stderr.trim(),
+          returnCode: code
+        });
+      });
+
+      childProcess.on('error', (error) => {
+        resolve({
+          success: false,
+          error: error.message,
+          stdout: stdout.trim(),
+          stderr: stderr.trim()
+        });
+      });
+
+      // Timeout after 30 seconds
+      setTimeout(() => {
+        if (!childProcess.killed) {
+          childProcess.kill();
+          resolve({
+            success: false,
+            error: 'Command timed out',
+            stdout: stdout.trim(),
+            stderr: stderr.trim()
+          });
+        }
+      }, 30000);
+    });
+  });
 }
 
 // Check if OpenCode server is running

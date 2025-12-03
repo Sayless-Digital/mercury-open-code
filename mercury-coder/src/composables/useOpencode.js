@@ -281,19 +281,13 @@ export function useOpencode() {
     }
 
     try {
-      console.log('[useOpencode] Fetching messages for session:', targetSessionId)
       const result = await client.value.session.messages({
         path: { id: targetSessionId },
         query: { limit }
       })
       
       const messages = result.data || []
-      console.log('[useOpencode] Fetched', messages.length, 'messages for session', targetSessionId)
-      
-      // Log first message if available
-      if (messages.length > 0 && messages[0].info) {
-        console.log('[useOpencode] First message sessionID:', messages[0].info.sessionID, 'matches target:', messages[0].info.sessionID === targetSessionId)
-      }
+      // Removed logging - was causing spam when called frequently
       
       return messages
     } catch (err) {
@@ -478,7 +472,10 @@ export function useOpencode() {
    */
   async function switchSession(sessionIdParam) {
     try {
-      console.log('[useOpencode] Switching sessionId from', sessionId.value, 'to', sessionIdParam)
+      // Only log if actually switching to a different session
+      if (sessionId.value !== sessionIdParam) {
+        console.log('[useOpencode] Switching sessionId from', sessionId.value, 'to', sessionIdParam)
+      }
       sessionId.value = sessionIdParam
       // Don't load messages here - let the ChatPanel watch handle it
       // This prevents conflicts and ensures messages are loaded for the correct session
@@ -515,12 +512,11 @@ export function useOpencode() {
    */
   async function updateSession(sessionIdParam, updates) {
     try {
-      console.log('[useOpencode] Updating session', sessionIdParam, 'with:', updates)
       const result = await client.value.session.update({
         path: { id: sessionIdParam },
         body: updates
       })
-      console.log('[useOpencode] Session updated:', result.data)
+      // Removed logging - session updates are frequent and cause spam
       return result.data || null
     } catch (err) {
       error.value = err.message
@@ -535,19 +531,25 @@ export function useOpencode() {
    */
   async function renameSessionWithAI(sessionIdParam) {
     try {
-      console.log('[useOpencode] Generating AI title for session:', sessionIdParam)
+      // Track which sessions we've already renamed to avoid repeated calls
+      if (!renameSessionWithAI.renamedSessions) {
+        renameSessionWithAI.renamedSessions = new Set()
+      }
+      
+      // Skip if we've already renamed this session
+      if (renameSessionWithAI.renamedSessions.has(sessionIdParam)) {
+        return null
+      }
       
       // Get messages from the session
       const messages = await getMessages(100, sessionIdParam)
       if (!messages || messages.length === 0) {
-        console.log('[useOpencode] No messages in session, using default title')
         return await updateSession(sessionIdParam, { title: 'New Chat' })
       }
       
       // Get first user message to base title on
       const firstUserMessage = messages.find(msg => msg.info?.role === 'user')
       if (!firstUserMessage) {
-        console.log('[useOpencode] No user message found, using default title')
         return await updateSession(sessionIdParam, { title: 'New Chat' })
       }
       
@@ -577,7 +579,8 @@ export function useOpencode() {
         title = 'New Chat'
       }
       
-      console.log('[useOpencode] Generated title:', title)
+      // Mark as renamed before updating (to prevent loops)
+      renameSessionWithAI.renamedSessions.add(sessionIdParam)
       
       // Update the session with the new title
       return await updateSession(sessionIdParam, { title })

@@ -1,4 +1,4 @@
-import { ref, computed, watch, reactive } from 'vue'
+import { ref, computed, watch, reactive, onUnmounted } from 'vue'
 import { useOpencode } from './useOpencode'
 import { useOpencodeEvents } from './useOpencodeEvents'
 
@@ -55,7 +55,7 @@ export function useOpencodeSync() {
     if (!sessionID) return
     
     try {
-      console.log('[OpencodeSync] Syncing session:', sessionID)
+      // console.log('[OpencodeSync] Syncing session:', sessionID)
       
       // Fetch all data for the session in parallel (like OpenCode does)
       const [sessionResult, messagesResult, todoResult, diffResult] = await Promise.all([
@@ -114,7 +114,7 @@ export function useOpencodeSync() {
           }
         })
         
-        console.log('[OpencodeSync] Synced', apiMessages.length, 'messages from API for session', sessionID, 'total now:', existingMessages.length)
+        // console.log('[OpencodeSync] Synced', apiMessages.length, 'messages from API for session', sessionID, 'total now:', existingMessages.length)
       }
       
       // Store todo, diff - direct assignment to reactive objects
@@ -137,7 +137,7 @@ export function useOpencodeSync() {
     try {
       const result = await opencode.client.value.session.list()
       sessions.value = result.data || []
-      console.log('[OpencodeSync] Loaded', sessions.value.length, 'sessions')
+      // console.log('[OpencodeSync] Loaded', sessions.value.length, 'sessions')
       return sessions.value
     } catch (err) {
       console.error('[OpencodeSync] Error loading sessions:', err)
@@ -165,11 +165,11 @@ export function useOpencodeSync() {
   function updateFromEventsMap() {
     const newMessageMap = events.messages.value
     if (!newMessageMap || newMessageMap.size === 0) {
-      console.log('[OpencodeSync] Events map is empty, skipping update')
+      // console.log('[OpencodeSync] Events map is empty, skipping update')
       return
     }
     
-    console.log('[OpencodeSync] Updating from events map, size:', newMessageMap.size)
+    // console.log('[OpencodeSync] Updating from events map, size:', newMessageMap.size)
     let updatedCount = 0
     let skippedCount = 0
     
@@ -191,7 +191,7 @@ export function useOpencodeSync() {
       // Direct assignment to reactive object - Vue tracks this automatically
       if (!messagesBySession[sessionID]) {
         messagesBySession[sessionID] = []
-        console.log('[OpencodeSync] Created new session array for', sessionID)
+        // console.log('[OpencodeSync] Created new session array for', sessionID)
       }
       
       const messages = messagesBySession[sessionID]
@@ -200,34 +200,34 @@ export function useOpencodeSync() {
       if (index !== -1) {
         // Update existing message - direct assignment to reactive array
         messages[index] = msg.info
-        console.log('[OpencodeSync] Updated existing message', messageId, 'role:', msg.info.role, 'in session', sessionID)
+        // console.log('[OpencodeSync] Updated existing message', messageId, 'role:', msg.info.role, 'in session', sessionID)
       } else {
         // Insert new message (sorted) - push to reactive array
         messages.push(msg.info)
         messages.sort((a, b) => a.id.localeCompare(b.id))
         updatedCount++
-        console.log('[OpencodeSync] Added new message', messageId, 'role:', msg.info.role, 'to session', sessionID, 'total:', messages.length)
+        // console.log('[OpencodeSync] Added new message', messageId, 'role:', msg.info.role, 'to session', sessionID, 'total:', messages.length)
       }
       
       // Update partsByMessage - direct assignment to reactive object
       if (msg.parts && msg.parts.length > 0) {
         partsByMessage[messageId] = [...msg.parts].sort((a, b) => a.id.localeCompare(b.id))
-        console.log('[OpencodeSync] Updated parts for message', messageId, 'parts:', msg.parts.length)
+        // console.log('[OpencodeSync] Updated parts for message', messageId, 'parts:', msg.parts.length)
       }
     })
     
-    console.log('[OpencodeSync] Update complete - added:', updatedCount, 'skipped:', skippedCount)
-    console.log('[OpencodeSync] Current messagesBySession keys:', Object.keys(messagesBySession))
-    Object.keys(messagesBySession).forEach(sid => {
-      console.log('[OpencodeSync] Session', sid, 'has', messagesBySession[sid].length, 'messages')
-    })
+    // console.log('[OpencodeSync] Update complete - added:', updatedCount, 'skipped:', skippedCount)
+    // console.log('[OpencodeSync] Current messagesBySession keys:', Object.keys(messagesBySession))
+    // Object.keys(messagesBySession).forEach(sid => {
+    //   console.log('[OpencodeSync] Session', sid, 'has', messagesBySession[sid].length, 'messages')
+    // })
   }
   
   // Handle events directly like OpenCode's global-sync (listening to sdk.event.listen)
   // Watch the events array and handle message.updated and message.part.updated directly
   watch(() => events.events.value, (eventList) => {
     if (!eventList || eventList.length === 0) {
-      console.log('[OpencodeSync] Events list is empty')
+      // console.log('[OpencodeSync] Events list is empty')
       return
     }
     
@@ -236,11 +236,11 @@ export function useOpencodeSync() {
     const newEvents = eventList.slice(lastProcessedIndex + 1)
     
     if (newEvents.length === 0) {
-      console.log('[OpencodeSync] No new events to process (lastIndex:', lastProcessedIndex, 'total:', eventList.length, ')')
+      // console.log('[OpencodeSync] No new events to process (lastIndex:', lastProcessedIndex, 'total:', eventList.length, ')')
       return
     }
     
-    console.log('[OpencodeSync] Processing', newEvents.length, 'new events (lastIndex:', lastProcessedIndex, 'total:', eventList.length, ')')
+    // console.log('[OpencodeSync] Processing', newEvents.length, 'new events (lastIndex:', lastProcessedIndex, 'total:', eventList.length, ')')
     
     newEvents.forEach(event => {
       const payload = event.payload || event
@@ -363,7 +363,7 @@ export function useOpencodeSync() {
   }, { immediate: false })
   
   // Initial update from events map
-  console.log('[OpencodeSync] Initializing, current messages map size:', events.messages.value.size)
+  // console.log('[OpencodeSync] Initializing, current messages map size:', events.messages.value.size)
   updateFromEventsMap()
   
   // Periodic sync to ensure messages are always synced (fallback in case watches don't trigger)
@@ -388,7 +388,8 @@ export function useOpencodeSync() {
       })
       
       if (needsSync) {
-        console.log('[OpencodeSync] Periodic sync detected missing messages, calling updateFromEventsMap')
+        // Removed excessive logging - this runs every 500ms
+        // console.log('[OpencodeSync] Periodic sync detected missing messages, calling updateFromEventsMap')
         updateFromEventsMap()
       }
     }
@@ -397,6 +398,14 @@ export function useOpencodeSync() {
   // Store interval ID for cleanup (if needed)
   syncInstance._syncInterval = syncInterval
   
+  // Cleanup interval when component unmounts
+  onUnmounted(() => {
+    if (syncInstance._syncInterval) {
+      clearInterval(syncInstance._syncInterval)
+      syncInstance._syncInterval = null
+      console.log('[OpencodeSync] Cleaned up periodic sync interval')
+    }
+  })
   
   /**
    * Clear messages for a session
