@@ -5,18 +5,28 @@
       <button class="toolbar-btn" @click="loadDirectory" :disabled="loading" title="Refresh">
         <RefreshCw :size="14" :class="{ spinning: loading }" />
       </button>
-      <button class="toolbar-btn" @click="startCreatingItem('file')" :disabled="loading || creatingItem" title="New File">
+      <button class="toolbar-btn" @click.stop="startCreatingItem('file')" :disabled="loading || creatingItem" title="New File">
         <FilePlus :size="14" />
       </button>
-      <button class="toolbar-btn" @click="startCreatingItem('folder')" :disabled="loading || creatingItem" title="New Folder">
+      <button class="toolbar-btn" @click.stop="startCreatingItem('folder')" :disabled="loading || creatingItem" title="New Folder">
         <FolderPlus :size="14" />
       </button>
     </div>
     
     <!-- File tree with root folder -->
-    <div class="file-tree" v-if="projectPath && rootFolder" draggable="false">
-      <!-- Inline input for new file/folder at the top -->
-      <div v-if="creatingItem" class="inline-create-item" :style="{ paddingLeft: '8px' }">
+    <div 
+      class="file-tree" 
+      v-if="projectPath && rootFolder" 
+      draggable="false" 
+      @click.self="handleTreeClick"
+      @contextmenu.prevent="handleTreeContextMenu"
+    >
+      <!-- Create input at root level if creating in project root -->
+      <div 
+        v-if="creatingItem && createInPath === projectPath" 
+        class="inline-create-item" 
+        :style="{ paddingLeft: '8px' }"
+      >
         <FilePlus v-if="creatingItemType === 'file'" :size="14" class="create-icon" />
         <FolderPlus v-else :size="14" class="create-icon" />
         <input
@@ -35,8 +45,48 @@
         :file="rootFolder"
         :depth="0"
         :active-file-path="activeFilePath"
+        :selected-path="selectedPath"
+        :creating-item="creatingItem"
+        :creating-item-type="creatingItemType"
+        :create-item-name="createItemName"
+        :create-in-path="createInPath"
+        :copied-file-path="copiedFilePath"
+        :has-copied-file="!!copiedFilePath"
         @file-selected="handleFileSelect"
+        @item-selected="handleItemSelected"
+        @confirm-create="confirmCreate"
+        @cancel-create="cancelCreate"
+        @create-input-blur="handleInputBlur"
+        @update:createItemName="(val) => { createItemName = val }"
+        @copy-file="handleCopyFile"
+        @paste-file="handlePasteFile"
       />
+      
+      <!-- Context menu for empty space (root level) -->
+      <div 
+        v-if="treeContextMenuVisible"
+        class="context-menu"
+        :style="{ top: treeContextMenuY + 'px', left: treeContextMenuX + 'px' }"
+        @click.stop
+      >
+        <button 
+          class="context-menu-item" 
+          @click="handleTreePaste"
+          :disabled="!copiedFilePath"
+        >
+          <Clipboard :size="14" />
+          <span>Paste</span>
+        </button>
+        <div class="context-menu-divider"></div>
+        <button class="context-menu-item" @click="handleTreeNewFile">
+          <FilePlus :size="14" />
+          <span>New File</span>
+        </button>
+        <button class="context-menu-item" @click="handleTreeNewFolder">
+          <FolderPlus :size="14" />
+          <span>New Folder</span>
+        </button>
+      </div>
     </div>
     
     <div v-else class="empty-state">
@@ -51,7 +101,7 @@
 
 <script setup>
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import { RefreshCw, FilePlus, FolderPlus } from 'lucide-vue-next';
+import { RefreshCw, FilePlus, FolderPlus, Clipboard } from 'lucide-vue-next';
 import FileTreeNode from './FileTreeNode.vue';
 
 const props = defineProps({
@@ -74,6 +124,14 @@ const creatingItem = ref(false);
 const creatingItemType = ref('file'); // 'file' or 'folder'
 const createItemName = ref('');
 const createInputRef = ref(null);
+const selectedPath = ref(null); // Currently selected file/folder path
+const selectedIsDirectory = ref(false); // Whether the selected item is a directory
+const createInPath = ref(null); // Path where new item should be created
+const copiedFilePath = ref(null); // Path of file/folder that was copied
+const copiedFileIsDirectory = ref(false); // Whether the copied item is a directory
+const treeContextMenuVisible = ref(false); // Context menu for empty space
+const treeContextMenuX = ref(0);
+const treeContextMenuY = ref(0);
 
 const getProjectName = () => {
   if (!props.projectPath) return 'No Project';
@@ -164,7 +222,203 @@ const loadDirectory = async () => {
 };
 
 const handleFileSelect = (filePath) => {
+  // When a file is selected, also update createInPath to its parent directory
+  const lastSlash = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+  if (lastSlash >= 0) {
+    createInPath.value = filePath.substring(0, lastSlash) || props.projectPath;
+  } else {
+    createInPath.value = props.projectPath;
+  }
+  selectedPath.value = filePath;
+  selectedIsDirectory.value = false; // Files are not directories
   emit('file-selected', filePath);
+};
+
+const handleItemSelected = (filePath, isDirectory) => {
+  // If clicking the same item, keep it selected
+  if (selectedPath.value === filePath) {
+    return;
+  }
+  
+  selectedPath.value = filePath;
+  selectedIsDirectory.value = isDirectory;
+  // If it's a directory, set it as the create target
+  if (isDirectory) {
+    createInPath.value = filePath;
+  } else {
+    // If it's a file, use its parent directory
+    // Extract directory from path (handle both / and \)
+    const lastSlash = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+    createInPath.value = lastSlash >= 0 ? filePath.substring(0, lastSlash) : props.projectPath;
+  }
+};
+
+const handleTreeClick = (event) => {
+  // If clicking on the tree container itself (not on a node), deselect
+  if (event.target === event.currentTarget || event.target.closest('.file-tree') === event.currentTarget) {
+    selectedPath.value = null;
+    createInPath.value = props.projectPath;
+    treeContextMenuVisible.value = false;
+    
+    // Cancel creation if clicking outside the input
+    if (creatingItem.value && !event.target.closest('.inline-create-item')) {
+      cancelCreate();
+    }
+  }
+};
+
+const handleTreeContextMenu = (event) => {
+  // Only show context menu if clicking on empty space (not on a file/folder)
+  if (event.target === event.currentTarget || event.target.closest('.file-tree') === event.currentTarget) {
+    event.preventDefault();
+    treeContextMenuX.value = event.clientX;
+    treeContextMenuY.value = event.clientY;
+    treeContextMenuVisible.value = true;
+    selectedPath.value = null;
+    createInPath.value = props.projectPath;
+    
+    // Close context menu when clicking outside
+    const closeMenu = (e) => {
+      if (!e.target.closest('.context-menu') && !e.target.closest('.file-tree')) {
+        treeContextMenuVisible.value = false;
+        document.removeEventListener('click', closeMenu);
+      }
+    };
+    setTimeout(() => {
+      document.addEventListener('click', closeMenu);
+    }, 0);
+  }
+};
+
+const handleTreePaste = () => {
+  treeContextMenuVisible.value = false;
+  if (copiedFilePath.value && props.projectPath) {
+    handlePasteFile(props.projectPath);
+  }
+};
+
+const handleTreeNewFile = () => {
+  treeContextMenuVisible.value = false;
+  startCreatingItem('file');
+};
+
+const handleTreeNewFolder = () => {
+  treeContextMenuVisible.value = false;
+  startCreatingItem('folder');
+};
+
+const handleCopyFile = (filePath, isDirectory) => {
+  copiedFilePath.value = filePath;
+  copiedFileIsDirectory.value = isDirectory;
+};
+
+// Helper function to check if a file or directory exists
+const pathExists = async (filePath) => {
+  try {
+    // Try to read as directory first (works for both files and dirs)
+    await window.electronAPI.readDirectory(filePath);
+    return true;
+  } catch {
+    try {
+      // Try to read as file
+      await window.electronAPI.readFile(filePath);
+      return true;
+    } catch {
+      // Doesn't exist
+      return false;
+    }
+  }
+};
+
+const handlePasteFile = async (targetDirectory) => {
+  if (!copiedFilePath.value) {
+    return;
+  }
+  
+  // If targetDirectory is null or empty, use project root
+  const pasteDirectory = targetDirectory || props.projectPath;
+  if (!pasteDirectory) {
+    return;
+  }
+  
+  if (!window.electronAPI?.copyFile) {
+    alert('Copy functionality is not available');
+    return;
+  }
+  
+  try {
+    // Extract filename from copied path
+    const lastSlash = Math.max(copiedFilePath.value.lastIndexOf('/'), copiedFilePath.value.lastIndexOf('\\'));
+    const fileName = lastSlash >= 0 ? copiedFilePath.value.substring(lastSlash + 1) : copiedFilePath.value;
+    
+    // Check if pasting in the same directory as source
+    const sourceDir = lastSlash >= 0 ? copiedFilePath.value.substring(0, lastSlash) : '';
+    const isSameDirectory = sourceDir === pasteDirectory;
+    
+    // Generate unique filename
+    const generateUniqueName = async (baseName, directory, isDir) => {
+      let finalName = baseName;
+      let counter = 0;
+      
+      // Split filename and extension (only for files)
+      let nameWithoutExt = baseName;
+      let extension = '';
+      if (!isDir) {
+        const lastDot = baseName.lastIndexOf('.');
+        const hasExtension = lastDot > 0 && lastDot < baseName.length - 1;
+        if (hasExtension) {
+          nameWithoutExt = baseName.substring(0, lastDot);
+          extension = baseName.substring(lastDot);
+        }
+      }
+      
+      // Check if we need to add " copy" suffix
+      let needsCopySuffix = isSameDirectory;
+      
+      // Check if file/directory exists
+      let testPath = await window.electronAPI.joinPath(directory, finalName);
+      const exists = await pathExists(testPath);
+      if (exists) {
+        needsCopySuffix = true;
+      }
+      
+      if (needsCopySuffix) {
+        // Try " copy", " copy 2", " copy 3", etc.
+        while (true) {
+          if (counter === 0) {
+            finalName = isDir ? `${baseName} copy` : `${nameWithoutExt} copy${extension}`;
+          } else {
+            finalName = isDir ? `${baseName} copy ${counter}` : `${nameWithoutExt} copy ${counter}${extension}`;
+          }
+          
+          testPath = await window.electronAPI.joinPath(directory, finalName);
+          const pathExistsResult = await pathExists(testPath);
+          if (!pathExistsResult) {
+            // Path doesn't exist, we can use this name
+            break;
+          }
+          counter++;
+        }
+      }
+      
+      return finalName;
+    };
+    
+    const uniqueFileName = await generateUniqueName(fileName, pasteDirectory, copiedFileIsDirectory.value);
+    const destPath = await window.electronAPI.joinPath(pasteDirectory, uniqueFileName);
+    
+    // Copy the file/directory
+    const result = await window.electronAPI.copyFile(copiedFilePath.value, destPath);
+    
+    if (result.success) {
+      // Refresh file tree
+      await loadDirectory();
+    } else {
+      alert(`Failed to paste: ${result.error}`);
+    }
+  } catch (error) {
+    alert(`Failed to paste: ${error.message}`);
+  }
 };
 
 const startCreatingItem = async (type) => {
@@ -175,6 +429,24 @@ const startCreatingItem = async (type) => {
   creatingItemType.value = type;
   createItemName.value = type === 'file' ? 'untitled.txt' : 'New Folder';
   creatingItem.value = true;
+  
+  // Determine where to create the new item
+  if (selectedPath.value && createInPath.value) {
+    // Use the createInPath that was set when the item was selected
+    // This is already the correct directory (parent if file, self if directory)
+  } else if (selectedPath.value) {
+    // Fallback: if selectedPath exists but createInPath doesn't, determine it
+    if (selectedIsDirectory.value) {
+      createInPath.value = selectedPath.value;
+    } else {
+      // It's a file, get its parent directory
+      const lastSlash = Math.max(selectedPath.value.lastIndexOf('/'), selectedPath.value.lastIndexOf('\\'));
+      createInPath.value = lastSlash >= 0 ? selectedPath.value.substring(0, lastSlash) : props.projectPath;
+    }
+  } else {
+    // No selection, create at project root
+    createInPath.value = props.projectPath;
+  }
   
   // Focus the input after it's rendered
   await nextTick();
@@ -207,19 +479,30 @@ const cancelCreate = () => {
   creatingItem.value = false;
   createItemName.value = '';
   creatingItemType.value = 'file';
+  createInPath.value = null;
 };
 
-const handleInputBlur = () => {
+const handleInputBlur = (event) => {
   // Small delay to allow click events on confirm button to fire
   setTimeout(() => {
-    if (creatingItem.value && !createItemName.value.trim()) {
-      cancelCreate();
+    // Cancel if still creating and the focus didn't move to another input in the same create item
+    if (creatingItem.value) {
+      const activeElement = document.activeElement;
+      // Only cancel if focus didn't move to another element in the same create item
+      if (!activeElement || !activeElement.closest('.inline-create-item')) {
+        cancelCreate();
+      }
     }
-  }, 200);
+  }, 150);
 };
 
 const createNewFile = async (fileName) => {
-  if (!props.projectPath || !fileName || !fileName.trim()) {
+  if (!fileName || !fileName.trim()) {
+    return;
+  }
+  
+  const targetPath = createInPath.value || props.projectPath;
+  if (!targetPath) {
     return;
   }
   
@@ -230,7 +513,7 @@ const createNewFile = async (fileName) => {
     }
     
     // Use IPC to join paths properly (handles Windows/Unix differences)
-    const filePath = await window.electronAPI.joinPath(props.projectPath, fileName.trim());
+    const filePath = await window.electronAPI.joinPath(targetPath, fileName.trim());
     
     // Create empty file
     const result = await window.electronAPI.writeFile(filePath, '');
@@ -248,7 +531,12 @@ const createNewFile = async (fileName) => {
 };
 
 const createNewFolder = async (folderName) => {
-  if (!props.projectPath || !folderName || !folderName.trim()) {
+  if (!folderName || !folderName.trim()) {
+    return;
+  }
+  
+  const targetPath = createInPath.value || props.projectPath;
+  if (!targetPath) {
     return;
   }
   
@@ -259,7 +547,7 @@ const createNewFolder = async (folderName) => {
     }
     
     // Use IPC to join paths properly (handles Windows/Unix differences)
-    const folderPath = await window.electronAPI.joinPath(props.projectPath, folderName.trim());
+    const folderPath = await window.electronAPI.joinPath(targetPath, folderName.trim());
     
     const result = await window.electronAPI.createDirectory(folderPath);
     if (result && result.success) {
@@ -320,6 +608,15 @@ watch(() => props.projectPath, async (newPath, oldPath) => {
 // File system watcher
 let fileWatcherCleanup = null;
 
+const handleDocumentClick = (event) => {
+  // Cancel creation if clicking outside the file tree or the create input
+  if (creatingItem.value) {
+    if (!event.target.closest('.file-tree') && !event.target.closest('.inline-create-item')) {
+      cancelCreate();
+    }
+  }
+};
+
 // Listen for refresh events
 onMounted(() => {
   console.log('FileManager: Mounted with projectPath:', props.projectPath);
@@ -350,10 +647,12 @@ onMounted(() => {
   }
   
   window.addEventListener('refresh-file-tree', loadDirectory);
+  document.addEventListener('click', handleDocumentClick);
 });
 
 onUnmounted(() => {
   window.removeEventListener('refresh-file-tree', loadDirectory);
+  document.removeEventListener('click', handleDocumentClick);
   
   // Stop file watcher
   if (fileWatcherCleanup) {
@@ -519,6 +818,56 @@ onUnmounted(() => {
   margin-top: 8px;
   opacity: 0.8;
   font-style: italic;
+}
+
+/* Context Menu for Empty Space */
+.context-menu {
+  position: fixed;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10000;
+  min-width: 150px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 4px;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.context-menu-item:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+.context-menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.context-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+.context-menu-item svg {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
 }
 </style>
 

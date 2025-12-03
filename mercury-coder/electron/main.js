@@ -422,6 +422,42 @@ function createWindow() {
     }
   });
 
+  ipcMain.handle('fs-copy-file', async (event, sourcePath, destPath) => {
+    const fs = require('fs').promises;
+    const path = require('path');
+    
+    async function copyRecursive(src, dest) {
+      const stats = await fs.stat(src);
+      
+      if (stats.isDirectory()) {
+        // Create destination directory
+        await fs.mkdir(dest, { recursive: true });
+        
+        // Read all items in source directory
+        const entries = await fs.readdir(src);
+        
+        // Copy each item recursively
+        for (const entry of entries) {
+          const srcPath = path.join(src, entry);
+          const destPath = path.join(dest, entry);
+          await copyRecursive(srcPath, destPath);
+        }
+      } else {
+        // Copy file - ensure destination directory exists
+        const destDir = path.dirname(dest);
+        await fs.mkdir(destDir, { recursive: true });
+        await fs.copyFile(src, dest);
+      }
+    }
+    
+    try {
+      await copyRecursive(sourcePath, destPath);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
   // Dialog handlers
   ipcMain.handle('dialog-open-folder', async () => {
     if (mainWindow) {

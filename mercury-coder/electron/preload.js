@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('fs-write-file', filePath, content),
   deleteFile: (filePath) => ipcRenderer.invoke('fs-delete-file', filePath),
   renameFile: (oldPath, newPath) => ipcRenderer.invoke('fs-rename-file', oldPath, newPath),
+  copyFile: (sourcePath, destPath) => ipcRenderer.invoke('fs-copy-file', sourcePath, destPath),
 
   // Backend communication
   sendMessage: (message, context) => 
