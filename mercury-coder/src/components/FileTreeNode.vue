@@ -55,6 +55,19 @@
         <span>Paste</span>
       </button>
       <div class="context-menu-divider"></div>
+      <button 
+        v-if="file.isDirectory"
+        class="context-menu-item" 
+        @click="handleOpenInExplorer"
+      >
+        <ExternalLink :size="14" />
+        <span>Open in Explorer</span>
+      </button>
+      <div v-if="file.isDirectory" class="context-menu-divider"></div>
+      <button class="context-menu-item" @click="handleMove">
+        <FolderOpen :size="14" />
+        <span>Move</span>
+      </button>
       <button class="context-menu-item" @click="startRename">
         <Pencil :size="14" />
         <span>Rename</span>
@@ -63,6 +76,34 @@
         <Trash2 :size="14" />
         <span>Delete</span>
       </button>
+    </div>
+    
+    <!-- Move Dialog -->
+    <div v-if="showMoveDialog" class="move-dialog-overlay" @click="cancelMove">
+      <div class="move-dialog" @click.stop>
+        <div class="move-dialog-header">
+          <h3>Move {{ file.isDirectory ? 'Folder' : 'File' }}</h3>
+          <button @click="cancelMove" class="close-btn">
+            <X :size="16" />
+          </button>
+        </div>
+        <div class="move-dialog-body">
+          <p class="move-source">Moving: <strong>{{ file.name }}</strong></p>
+          <p class="move-label">Select destination folder:</p>
+          <div class="move-tree-container">
+            <MoveDestinationTree
+              :project-path="projectPath"
+              :current-path="file.path"
+              :selected-path="moveTargetPath"
+              @path-selected="(path) => { console.log('[FileTreeNode] Path selected:', path); moveTargetPath = path; }"
+            />
+          </div>
+        </div>
+        <div class="move-dialog-actions">
+          <button @click="cancelMove" class="dialog-btn cancel-dialog-btn">Cancel</button>
+          <button @click="confirmMove" class="dialog-btn confirm-dialog-btn" :disabled="!canMove">Move</button>
+        </div>
+      </div>
     </div>
     
     <!-- Delete Confirmation Dialog -->
@@ -121,6 +162,7 @@
         :create-in-path="createInPath"
         :copied-file-path="copiedFilePath"
         :has-copied-file="hasCopiedFile"
+        :project-path="projectPath"
         @file-selected="$emit('file-selected', $event)"
         @item-selected="(path, isDirectory) => emit('item-selected', path, isDirectory)"
         @confirm-create="$emit('confirm-create')"
@@ -129,6 +171,7 @@
         @update:createItemName="$emit('update:createItemName', $event)"
         @copy-file="(path, isDirectory) => emit('copy-file', path, isDirectory)"
         @paste-file="(path) => emit('paste-file', path)"
+        @move-file="(sourcePath, targetDirectory) => emit('move-file', sourcePath, targetDirectory)"
       />
     </div>
   </div>
@@ -139,8 +182,9 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { 
   Folder, FolderOpen, File, FileText, FileCode, FileJson, 
   FileImage, FileType, Code, FileCode2, Image as ImageIcon,
-  ChevronRight, Pencil, Trash2, FilePlus, FolderPlus, AlertTriangle, Copy, Clipboard
+  ChevronRight, Pencil, Trash2, FilePlus, FolderPlus, AlertTriangle, Copy, Clipboard, X, ExternalLink
 } from 'lucide-vue-next';
+import MoveDestinationTree from './MoveDestinationTree.vue';
 
 const props = defineProps({
   file: {
@@ -183,9 +227,13 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  projectPath: {
+    type: String,
+    default: null,
+  },
 });
 
-const emit = defineEmits(['file-selected', 'item-selected', 'confirm-create', 'cancel-create', 'create-input-blur', 'update:createItemName', 'copy-file', 'paste-file']);
+const emit = defineEmits(['file-selected', 'item-selected', 'confirm-create', 'cancel-create', 'create-input-blur', 'update:createItemName', 'copy-file', 'paste-file', 'move-file']);
 
 // Initialize expanded state and children
 // If children are preloaded, start expanded
@@ -206,6 +254,11 @@ const originalFilePath = ref(null);
 
 // Delete dialog state
 const showDeleteDialog = ref(false);
+
+// Move dialog state
+const showMoveDialog = ref(false);
+const moveTargetPath = ref(null);
+
 
 // Check if this file/folder is the active one
 const isActive = computed(() => {
@@ -537,6 +590,69 @@ const handlePaste = () => {
   }
 };
 
+const canMove = computed(() => {
+  if (!moveTargetPath.value) {
+    return props.projectPath && props.file.path !== props.projectPath;
+  }
+  // Can't move to itself or into itself
+  if (moveTargetPath.value === props.file.path) {
+    return false;
+  }
+  // Can't move a directory into itself or its children
+  if (props.file.isDirectory) {
+    const normalizedSourcePath = props.file.path.replace(/\\/g, '/');
+    const normalizedTargetPath = moveTargetPath.value.replace(/\\/g, '/');
+    if (normalizedTargetPath.startsWith(normalizedSourcePath + '/')) {
+      return false;
+    }
+  }
+  return true;
+});
+
+const handleOpenInExplorer = async () => {
+  contextMenuVisible.value = false;
+  if (props.file.isDirectory && window.electronAPI?.openPathInExplorer) {
+    try {
+      const result = await window.electronAPI.openPathInExplorer(props.file.path);
+      if (!result || !result.success) {
+        console.error('Failed to open directory in explorer:', result?.error || 'Unknown error');
+      }
+    } catch (error) {
+      console.error('Failed to open directory in explorer:', error);
+    }
+  }
+};
+
+const handleMove = () => {
+  contextMenuVisible.value = false;
+  showMoveDialog.value = true;
+  // Initialize with parent directory or project root
+  const lastSlash = Math.max(props.file.path.lastIndexOf('/'), props.file.path.lastIndexOf('\\'));
+  if (lastSlash >= 0) {
+    moveTargetPath.value = props.file.path.substring(0, lastSlash);
+  } else {
+    moveTargetPath.value = props.projectPath || null;
+  }
+  console.log('[FileTreeNode] Move dialog opened, initial target:', moveTargetPath.value);
+};
+
+const confirmMove = () => {
+  if (!canMove.value) {
+    return;
+  }
+  const targetDirectory = moveTargetPath.value || props.projectPath;
+  if (targetDirectory) {
+    emit('move-file', props.file.path, targetDirectory);
+  }
+  showMoveDialog.value = false;
+  moveTargetPath.value = null;
+};
+
+const cancelMove = () => {
+  showMoveDialog.value = false;
+  moveTargetPath.value = null;
+};
+
 onMounted(async () => {
   if (props.activeFilePath && props.file.isDirectory) {
     await autoExpandForActiveFile();
@@ -584,8 +700,9 @@ onUnmounted(() => {
   background: var(--accent);
 }
 
-.node-item.is-file {
-  cursor: pointer;
+
+.node-item:active {
+  cursor: grabbing;
 }
 
 .node-item.is-directory {
@@ -838,6 +955,138 @@ onUnmounted(() => {
 .delete-warning {
   color: var(--muted-foreground);
   font-size: 13px;
+}
+
+/* Move Dialog Styles */
+.move-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20000;
+  animation: fadeIn 0.2s ease;
+}
+
+.move-dialog {
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  max-width: 500px;
+  width: 90%;
+  max-height: 80vh;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  animation: slideUp 0.3s ease;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.move-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.move-dialog-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  padding: var(--space-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+}
+
+.close-btn:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+.move-dialog-body {
+  padding: 20px 24px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.move-source {
+  margin: 0 0 12px 0;
+  color: var(--foreground);
+  font-size: 14px;
+}
+
+.move-source strong {
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.move-label {
+  margin: 16px 0 8px 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.move-tree-container {
+  margin-top: var(--space-3);
+}
+
+.move-dialog-actions {
+  display: flex;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+  justify-content: flex-end;
+  background: var(--muted);
+}
+
+.dialog-btn {
+  padding: 10px 20px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid var(--border);
+  font-family: inherit;
+}
+
+.dialog-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cancel-dialog-btn {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.cancel-dialog-btn:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+.confirm-dialog-btn {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+}
+
+.confirm-dialog-btn:hover:not(:disabled) {
+  opacity: 0.9;
 }
 
 .delete-dialog-actions {

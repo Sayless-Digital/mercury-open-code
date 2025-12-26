@@ -128,123 +128,88 @@ export function useOpencode() {
   async function sendMessage(text, options = {}) {
     if (!sessionId.value) {
       await createSession()
-    }
-
-    // Ensure model is correctly configured before sending
-    // This fixes the model format if it's wrong (e.g., missing provider prefix)
-    try {
-      const directory = projectStore.currentProject?.path || process.cwd()
-      const correctModel = 'amazon-bedrock/anthropic.claude-sonnet-4-5-20250929-v1:0'
-      
-      // Force update the model via API and file system
-      console.log('[useOpencode] Ensuring model is correct before send...')
-      
-      // 1. Update via API
-      await client.value.config.update({
-        query: { directory },
-        body: { model: correctModel }
-      })
-      
-      // 2. Write to Mercury Coder global config instead of project directory
+    } else {
+      // Validate that the session actually exists in the backend
       try {
-        if (window.electronAPI?.writeMercuryConfig) {
-          const minimalConfig = {
-            $schema: "https://opencode.ai/config.json",
-            model: correctModel
-          }
-          const result = await window.electronAPI.writeMercuryConfig(minimalConfig)
-          if (result.success) {
-            console.log('[useOpencode] Wrote model to Mercury global config:', result.path)
+        const sessionsResult = await client.value.session.list()
+        const sessionExists = sessionsResult?.data?.some(s => s.id === sessionId.value)
+        
+        if (!sessionExists) {
+          console.error('[useOpencode] Session mismatch - UI session not in backend')
+          
+          // Use first available session or create new one
+          if (sessionsResult?.data && sessionsResult.data.length > 0) {
+            sessionId.value = sessionsResult.data[0].id
+            
+            try {
+              const { useSessionStore } = await import('@/stores/session')
+              const sessionStore = useSessionStore()
+              await sessionStore.switchSession(sessionsResult.data[0].id)
+            } catch (err) {
+              console.error('[useOpencode] Failed to sync SessionStore:', err)
+            }
           } else {
-            console.warn('[useOpencode] Could not write to Mercury config:', result.error)
+            await createSession()
           }
         }
-      } catch (fsErr) {
-        console.warn('[useOpencode] Could not write to Mercury config:', fsErr)
+      } catch (err) {
+        console.warn('[useOpencode] Session validation failed:', err)
       }
-      
-      // 3. Wait for config to be reloaded
-      await new Promise(resolve => setTimeout(resolve, 300))
-      
-      // 4. Verify
-      const config = await getConfig()
-      console.log('[useOpencode] Model after fix:', config?.model)
-      
-      if (config?.model !== correctModel) {
-        console.warn('[useOpencode] Model still incorrect after fix attempt:', config?.model)
-      }
-    } catch (err) {
-      console.error('[useOpencode] Error ensuring model before sending:', err)
-      // Don't throw - try to continue anyway, but log the error
+    }
+    
+    // Always use Claude 4.5 by passing model directly in prompt
+    // OpenCode expects model as an object with providerID and modelID
+    const correctModel = {
+      providerID: 'amazon-bedrock',
+      modelID: 'anthropic.claude-sonnet-4-5-20250929-v1:0'
     }
 
     try {
       loading.value = true
       error.value = null
 
-      console.log('[useOpencode] Sending message to session:', sessionId.value)
-      console.log('[useOpencode] Message text:', text)
-      console.log('[useOpencode] Options:', options)
 
-      // Following official OpenCode pattern: call prompt() without awaiting
-      // Events will handle the response in real-time
-      // OpenCode will automatically use the model from its config - we don't need to pass it
-      // This matches: sdk.client.session.prompt({...}) in prompt-input.tsx:331
-      // Only pass model if explicitly provided in options (for override)
+      // ALWAYS pass the model in the prompt body to override config
+      // This ensures we use Claude 4.5 regardless of config file state
       const promptBody = {
         parts: [{ type: 'text', text }],
-        agent: options.agent || undefined,
-        tools: options.tools || undefined,
-        noReply: options.noReply || false
+        model: correctModel  // Always use Claude 4.5 as object
       }
       
-      if (options.model) {
-        promptBody.model = options.model
-      }
+      // Debug: Verify model format before sending
+      console.log('[useOpencode] Sending prompt with model:', JSON.stringify(correctModel))
+      console.log('[useOpencode] Full promptBody before sending:', JSON.stringify(promptBody, null, 2))
+      
+      // Only include optional properties if they have values
+      if (options.agent) promptBody.agent = options.agent
+      if (options.tools) promptBody.tools = options.tools
+      if (options.noReply) promptBody.noReply = options.noReply
+      
+      console.log('[useOpencode] Final promptBody with options:', JSON.stringify(promptBody, null, 2))
       
       const promptPromise = client.value.session.prompt({
         path: { id: sessionId.value },
         body: promptBody
       })
       
-      // Log the promise result for debugging and use the data
+      // Handle the prompt result
       promptPromise.then((result) => {
-        console.log('[useOpencode] Prompt promise resolved:', result)
-        console.log('[useOpencode] Result keys:', result ? Object.keys(result) : [])
-        console.log('[useOpencode] Result.data:', result?.data)
-        console.log('[useOpencode] Result.error:', result?.error)
-        
         if (result?.error) {
-          console.error('[useOpencode] Prompt returned error:', result.error)
+          console.error('[useOpencode] Prompt error - Message:', result.error.message)
+          console.error('[useOpencode] Prompt error - Code:', result.error.code)
+          console.error('[useOpencode] Prompt error - Status:', result.error.status)
+          console.error('[useOpencode] Prompt error - Full error:', JSON.stringify(result.error, null, 2))
           error.value = result.error.message || 'Failed to send message'
           loading.value = false
-        } else if (result?.data) {
-          console.log('[useOpencode] Prompt returned data:', result.data)
-          console.log('[useOpencode] Data keys:', Object.keys(result.data || {}))
-          console.log('[useOpencode] Data.info:', result.data.info)
-          console.log('[useOpencode] Data.parts:', result.data.parts)
-          
-          // The prompt() returns { info: AssistantMessage, parts: Part[] }
-          // Add it to the events messages map so it's available immediately
-          // Events will also update it in real-time, but this provides immediate feedback
+        } else if (result?.data && Object.keys(result.data).length > 0) {
+          // The prompt() returns { info: AssistantMessage, parts: Part[] } when successful
+          // Add it to events for immediate display
           if (result.data.info && result.data.info.role === 'assistant') {
             events.addMessageFromPrompt(result.data)
-            console.log('[useOpencode] Added assistant message from prompt() to events')
-            // Don't clear loading here - wait for session.idle event to ensure all events are processed
-          } else {
-            // If no assistant message in response, clear loading after a delay
-            // This handles edge cases where events might not arrive
-            setTimeout(() => {
-              if (loading.value) {
-                console.log('[useOpencode] Clearing loading after timeout (no assistant message in response)')
-                loading.value = false
-              }
-            }, 2000)
           }
         } else {
-          // No data returned - this is normal for streaming
-          // Loading will be cleared by session.idle event
-          console.log('[useOpencode] Prompt returned no data (streaming mode)')
+          // Empty response - events will handle the messages
+          // This is normal for OpenCode - prompt() doesn't always return full message data
         }
       }).catch((err) => {
         // Log errors - this could indicate the prompt failed to send
@@ -358,40 +323,16 @@ export function useOpencode() {
 
   /**
    * Set model in OpenCode config
-   * Model format: "providerID/modelID" (e.g., "amazon-bedrock/anthropic.claude-sonnet-4-5-20250929-v1:0")
-   * 
-   * Note: OpenCode's config.update() writes to config.json, but config resolution only reads
-   * opencode.json/opencode.jsonc files. So we use the API to update, which should handle this correctly.
-   * If that doesn't work, we may need to write directly to opencode.json.
+   * Note: We now pass model directly in prompt() calls instead of relying on config files
    */
   async function setModel(modelString) {
     try {
       const directory = projectStore.currentProject?.path || process.cwd()
-      // Use OpenCode's config.update() API - it should handle writing to the correct location
       const result = await client.value.config.update({
         query: { directory },
         body: { model: modelString }
       })
-      console.log('[useOpencode] Model set to:', modelString, 'Result:', result.data?.model)
-      
-      // Also ensure Mercury Coder global config has the correct model
-      try {
-        if (window.electronAPI?.writeMercuryConfig) {
-          const minimalConfig = {
-            $schema: "https://opencode.ai/config.json",
-            model: modelString
-          }
-          const result = await window.electronAPI.writeMercuryConfig(minimalConfig)
-          if (result.success) {
-            console.log('[useOpencode] Wrote model to Mercury global config:', result.path)
-          } else {
-            console.warn('[useOpencode] Could not write to Mercury config (non-critical):', result.error)
-          }
-        }
-      } catch (fsErr) {
-        console.warn('[useOpencode] Could not write to Mercury config (non-critical):', fsErr)
-      }
-      
+      console.log('[useOpencode] Model config updated to:', modelString)
       return result.data || { model: modelString }
     } catch (err) {
       console.error('[useOpencode] Set model error:', err)
@@ -401,32 +342,21 @@ export function useOpencode() {
   
   /**
    * Initialize: Set default model to Claude Sonnet 4.5
-   * Always set it to ensure it's in the correct format (providerID/modelID)
+   * Note: Model is now passed directly in prompt() calls, but we still update config for consistency
    */
   async function ensureDefaultModel() {
     try {
-      const config = await getConfig()
-      const currentModel = config?.model
-      
-      // Check if model is in correct format (has provider prefix)
       const correctModel = 'amazon-bedrock/anthropic.claude-sonnet-4-5-20250929-v1:0'
-      
-      if (!currentModel || !currentModel.includes('/') || currentModel !== correctModel) {
-        // Set to Claude Sonnet 4.5 via Amazon Bedrock
-        await setModel(correctModel)
-        console.log('[useOpencode] Set default model to Claude Sonnet 4.5:', correctModel)
-      } else {
-        console.log('[useOpencode] Model already correctly configured:', currentModel)
-      }
+      await setModel(correctModel)
+      console.log('[useOpencode] Default model set to Claude 4.5')
     } catch (err) {
-      console.warn('[useOpencode] Could not ensure default model:', err)
+      console.warn('[useOpencode] Could not set default model (non-critical):', err)
     }
   }
 
-  // Ensure default model is set on initialization (don't await - run in background)
-  // This will fix the model format if it's incorrect
+  // Set default model on initialization
   ensureDefaultModel().catch(err => {
-    console.warn('[useOpencode] Background model check failed:', err)
+    console.warn('[useOpencode] Background model setup failed:', err)
   })
 
   /**

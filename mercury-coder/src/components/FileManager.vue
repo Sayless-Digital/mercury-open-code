@@ -52,6 +52,7 @@
         :create-in-path="createInPath"
         :copied-file-path="copiedFilePath"
         :has-copied-file="!!copiedFilePath"
+        :project-path="projectPath"
         @file-selected="handleFileSelect"
         @item-selected="handleItemSelected"
         @confirm-create="confirmCreate"
@@ -60,6 +61,7 @@
         @update:createItemName="(val) => { createItemName = val }"
         @copy-file="handleCopyFile"
         @paste-file="handlePasteFile"
+        @move-file="handleMoveFile"
       />
       
       <!-- Context menu for empty space (root level) -->
@@ -418,6 +420,55 @@ const handlePasteFile = async (targetDirectory) => {
     }
   } catch (error) {
     alert(`Failed to paste: ${error.message}`);
+  }
+};
+
+const handleMoveFile = async (sourcePath, targetDirectory) => {
+  console.log('[FileManager] handleMoveFile called:', { sourcePath, targetDirectory });
+  
+  if (!sourcePath || !targetDirectory) {
+    console.log('[FileManager] Missing source or target');
+    return;
+  }
+  
+  if (!window.electronAPI?.renameFile) {
+    alert('Move functionality is not available');
+    return;
+  }
+  
+  try {
+    // Extract filename from source path
+    const lastSlash = Math.max(sourcePath.lastIndexOf('/'), sourcePath.lastIndexOf('\\'));
+    const fileName = lastSlash >= 0 ? sourcePath.substring(lastSlash + 1) : sourcePath;
+    
+    console.log('[FileManager] Moving file:', fileName, 'to:', targetDirectory);
+    
+    // Construct destination path
+    const destPath = await window.electronAPI.joinPath(targetDirectory, fileName);
+    
+    console.log('[FileManager] Destination path:', destPath);
+    
+    // Check if destination already exists
+    const exists = await pathExists(destPath);
+    if (exists) {
+      alert(`A file or folder with the name "${fileName}" already exists in the destination.`);
+      return;
+    }
+    
+    // Move the file/directory using rename (which also works for moving across directories)
+    const result = await window.electronAPI.renameFile(sourcePath, destPath);
+    
+    console.log('[FileManager] Rename result:', result);
+    
+    if (result.success) {
+      // Refresh file tree
+      await loadDirectory();
+    } else {
+      alert(`Failed to move: ${result.error}`);
+    }
+  } catch (error) {
+    console.error('Failed to move file:', error);
+    alert(`Failed to move: ${error.message}`);
   }
 };
 

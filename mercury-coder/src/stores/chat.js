@@ -96,16 +96,12 @@ export const useChatStore = defineStore('chat', () => {
    */
   function syncMessagesFromEvents() {
     const currentSessionId = opencode.sessionId.value
-    if (!currentSessionId) {
-      return
-    }
+    if (!currentSessionId) return
     
     const newMessageMap = events.messages.value
     
     // Filter messages by current sessionID BEFORE copying to messageMap
-    // This ensures messageMap only contains messages for the current session
     newMessageMap.forEach((msg, messageId) => {
-      // Only add messages that belong to the current session
       if (msg.info?.sessionID === currentSessionId) {
         messageMap.value.set(messageId, msg)
       }
@@ -323,15 +319,11 @@ export const useChatStore = defineStore('chat', () => {
   // Watch for session status changes and update loading state
   watch(latestSessionStatus, (status) => {
     if (status === 'idle') {
-      console.log('[ChatStore] Session is idle, clearing loading state')
       internalLoading.value = false
-      // Also clear opencode.loading to ensure input is enabled
       if (opencode.clearLoading) {
         opencode.clearLoading()
       }
     } else if (status === 'busy') {
-      // Keep loading true when session is busy (AI is working)
-      console.log('[ChatStore] Session is busy, keeping loading state')
       internalLoading.value = true
       // Also ensure opencode.loading is true
       if (!opencode.loading.value) {
@@ -350,11 +342,9 @@ export const useChatStore = defineStore('chat', () => {
       if (payload?.type === 'session.status' && payload?.properties?.status) {
         const statusType = payload.properties.status.type
         if (statusType === 'busy') {
-          console.log('[ChatStore] Detected session.status busy event, setting loading')
           internalLoading.value = true
           break
         } else if (statusType === 'idle') {
-          console.log('[ChatStore] Detected session.status idle event, clearing loading')
           internalLoading.value = false
           if (opencode.clearLoading) {
             opencode.clearLoading()
@@ -364,7 +354,6 @@ export const useChatStore = defineStore('chat', () => {
       }
       // Also check for session.error events (abort triggers this)
       if (payload?.type === 'session.error') {
-        console.log('[ChatStore] Detected session.error event, clearing loading')
         internalLoading.value = false
         if (opencode.clearLoading) {
           opencode.clearLoading()
@@ -460,9 +449,6 @@ export const useChatStore = defineStore('chat', () => {
       internalLoading.value = true
       
       // Send message through OpenCode (creates session if needed)
-      // Events are already subscribed (globally and session-specific)
-      // Following official OpenCode pattern: prompt() is called without await, events handle the response
-      // The user message will arrive via message.updated event, so we don't need to add it manually
       await opencode.sendMessage(text, {
         agent: options.agent || 'build',
         tools: options.tools || {},

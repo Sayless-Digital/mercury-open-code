@@ -1,0 +1,15 @@
+{
+  "name": "mercury-open-code",
+  "version": "1.0.0",
+  "description": "Mercury OpenCode - AI-powered development environment",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently --names \"BACKEND,FRONTEND\" --prefix-colors \"cyan,magenta\" \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd opencode-backend/packages/console/app && bun dev",
+    "dev:frontend": "cd mercury-coder && npm run dev",
+    "install:all": "cd opencode-backend && bun install && cd ../mercury-coder && npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

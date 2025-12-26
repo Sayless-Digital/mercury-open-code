@@ -114,20 +114,34 @@ export const useSessionStore = defineStore('session', () => {
         )
         const validActiveSession = sessions.value.some(s => s.id === persistedState.activeSessionId)
         
+        if (!validActiveSession) {
+          console.warn('[SessionStore] Persisted session no longer exists in backend:', persistedState.activeSessionId)
+        }
+        
         if (validOpenedSessions.length > 0) {
           // Restore opened sessions
           openedSessions.value = validOpenedSessions
           
           // Restore active session if it's still valid
           if (validActiveSession) {
-            await switchSession(persistedState.activeSessionId)
-            // Removed logging - restoration happens frequently
-            return sessions.value
-          } else if (validOpenedSessions.length > 0) {
-            // Active session is gone, but we have opened sessions - use first one
-            await switchSession(validOpenedSessions[0])
-            console.log('[SessionStore] Active session no longer exists, switched to first opened session')
-            return sessions.value
+            try {
+              await switchSession(persistedState.activeSessionId)
+              return sessions.value
+            } catch (err) {
+              console.error('[SessionStore] Failed to switch to persisted session:', err)
+              // Fall through to try first opened session
+            }
+          }
+          
+          // Active session is gone or failed to switch - use first valid opened session
+          if (validOpenedSessions.length > 0) {
+            try {
+              await switchSession(validOpenedSessions[0])
+              return sessions.value
+            } catch (err) {
+              console.error('[SessionStore] Failed to switch to first opened session:', err)
+              // Fall through to default behavior
+            }
           }
         }
       }
@@ -140,10 +154,15 @@ export const useSessionStore = defineStore('session', () => {
         if (!openedSessions.value.includes(mostRecent.id)) {
           openedSessions.value.push(mostRecent.id)
         }
-        await switchSession(mostRecent.id)
+        try {
+          await switchSession(mostRecent.id)
+        } catch (err) {
+          console.error('[SessionStore] Failed to switch to most recent session:', err)
+          activeSessionId.value = null
+          await createNewSession()
+        }
       } else if (!activeSessionId.value && sessions.value.length === 0) {
-        // No sessions exist - don't create automatically, let user decide
-        console.log('[SessionStore] No sessions exist and no persisted state - waiting for user to create session')
+        await createNewSession('Initial Session')
       }
       
       // Save state after loading
@@ -175,11 +194,9 @@ export const useSessionStore = defineStore('session', () => {
       
       const newSession = await opencode.createSession(title)
       
-      // Add the newly created session to sessions immediately
       const existingIndex = sessions.value.findIndex(s => s.id === newSession.id)
       if (existingIndex === -1) {
         sessions.value.push(newSession)
-        console.log('[SessionStore] Added new session:', newSession.id)
       } else {
         // Update if it already exists (shouldn't happen for new sessions, but just in case)
         sessions.value[existingIndex] = newSession
@@ -214,15 +231,19 @@ export const useSessionStore = defineStore('session', () => {
       loading.value = true
       error.value = null
       
-      // Verify session exists
+      // Verify session exists in local cache
       const session = sessions.value.find(s => s.id === sessionId)
       if (!session) {
-        throw new Error(`Session ${sessionId} not found`)
-      }
-      
-      // Only log if actually switching to a different session
-      if (activeSessionId.value !== sessionId) {
-        console.log('[SessionStore] Switching to session:', sessionId)
+        console.error('[SessionStore] Session not found in local cache:', sessionId)
+        // Try to reload sessions from backend to see if it exists there
+        const result = await opencode.client.value.session.list()
+        sessions.value = result.data || []
+        
+        // Check again after reload
+        const sessionAfterReload = sessions.value.find(s => s.id === sessionId)
+        if (!sessionAfterReload) {
+          throw new Error(`Session ${sessionId} not found in backend. It may have been deleted.`)
+        }
       }
       
       // Update active session FIRST
@@ -234,7 +255,10 @@ export const useSessionStore = defineStore('session', () => {
       }
       
       // Switch the session ID in opencode
-      await opencode.switchSession(sessionId)
+      const switchResult = await opencode.switchSession(sessionId)
+      if (!switchResult) {
+        throw new Error(`Failed to switch to session ${sessionId} in OpenCode backend`)
+      }
       
       // Wait for Vue reactivity to settle
       await new Promise(resolve => setTimeout(resolve, 0))
@@ -245,10 +269,7 @@ export const useSessionStore = defineStore('session', () => {
       const chatStore = useChatStore()
       await chatStore.loadMessagesForSession(sessionId)
       
-      // Save state after switching
       saveSessionState()
-      
-      // Removed success log - happens too frequently
       
       return true
     } catch (err) {
@@ -349,10 +370,7 @@ export const useSessionStore = defineStore('session', () => {
           sessions.value[index] = result
         }
         
-        // Save state
         saveSessionState()
-        
-        console.log('[SessionStore] Session renamed to:', result.title)
       }
       
       return result
@@ -408,8 +426,6 @@ export const useSessionStore = defineStore('session', () => {
       loading.value = true
       error.value = null
       
-      console.log('[SessionStore] Clearing all sessions...')
-      
       // Delete all sessions one by one
       const sessionsToDelete = [...sessions.value]
       for (const session of sessionsToDelete) {
@@ -425,10 +441,8 @@ export const useSessionStore = defineStore('session', () => {
       openedSessions.value = []
       sessions.value = []
       
-      // Create a new session
       await createNewSession()
       
-      console.log('[SessionStore] All sessions cleared')
       return true
     } catch (err) {
       error.value = err.message

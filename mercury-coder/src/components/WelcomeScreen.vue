@@ -3,7 +3,7 @@
     <div class="welcome-content">
       <div class="welcome-header">
         <div class="app-logo">
-          <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+          <svg width="100" height="100" viewBox="0 0 80 80" fill="none">
             <circle cx="40" cy="40" r="30" stroke="currentColor" stroke-width="6"/>
             <circle cx="40" cy="40" r="14" stroke="currentColor" stroke-width="6"/>
           </svg>
@@ -65,7 +65,7 @@ const loadProjects = async () => {
     }
     const projects = await window.electronAPI.getProjects();
     if (projects) {
-      recentProjects.value = projects.slice(0, 5); // Show last 5
+      recentProjects.value = projects.slice(0, 3); // Show last 3
     }
   } catch (error) {
     console.error('Failed to load projects:', error);
@@ -177,9 +177,7 @@ onMounted(() => {
 }
 
 .app-logo {
-  width: var(--size-2xl);
-  height: var(--size-2xl);
-  margin: 0 auto var(--space-10);
+  margin: 0 auto var(--space-4);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs').promises;
@@ -487,6 +487,33 @@ function createWindow() {
       return { path: result.filePaths[0] };
     }
     return null;
+  });
+
+  ipcMain.handle('open-path-in-explorer', async (event, pathToOpen) => {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      
+      // Verify the path exists
+      if (!fs.existsSync(pathToOpen)) {
+        return { success: false, error: 'Path does not exist' };
+      }
+      
+      // Normalize the path
+      const normalizedPath = path.resolve(pathToOpen);
+      
+      // Use openExternal with file:// URL for better cross-platform support
+      // On Windows, this ensures the explorer opens in the foreground
+      const fileUrl = process.platform === 'win32' 
+        ? `file:///${normalizedPath.replace(/\\/g, '/')}`
+        : `file://${normalizedPath}`;
+      
+      await shell.openExternal(fileUrl);
+      return { success: true };
+    } catch (error) {
+      console.error('Error opening path in explorer:', error);
+      return { success: false, error: error.message };
+    }
   });
 
   ipcMain.handle('dialog-save-file', async (event, options = {}) => {

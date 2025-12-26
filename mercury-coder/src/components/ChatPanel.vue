@@ -398,7 +398,8 @@
           @click="chatStore.interruptSession()"
           :title="interruptCount > 0 ? 'Press again to abort' : 'Interrupt session (Esc)'"
         >
-          <X :size="16" fill="currentColor" />
+          <Square :size="14" />
+          <span class="interrupt-text">Interrupt</span>
           <span v-if="interruptCount > 0" class="interrupt-badge">{{ interruptCount }}</span>
         </button>
         <button
@@ -2887,23 +2888,25 @@ onBeforeUnmount(() => {
 }
 
 .interrupt-button {
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  min-height: 28px;
-  padding: 0;
+  min-width: auto;
+  height: 24px;
+  min-height: 24px;
+  padding: 0 10px;
   background: var(--muted);
   border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
   color: var(--foreground);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   transition: all 0.2s;
   flex-shrink: 0;
   position: relative;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .interrupt-button:hover:not(:disabled) {
@@ -2922,6 +2925,12 @@ onBeforeUnmount(() => {
 .interrupt-button.interrupt-active:hover {
   background: var(--primary-hover);
   border-color: var(--primary-hover);
+}
+
+.interrupt-text {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .interrupt-badge {
